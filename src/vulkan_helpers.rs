@@ -476,6 +476,20 @@ use winit::window::Window;
 
 	pub fn create_framebuffers(device: &ash::Device, data: &mut Data) -> Result<()>
 	{
+		data.framebuffers = data.swapchain_image_views
+			.iter()
+			.map(|image_view|
+				{
+					let attachments = &[*image_view];
+					let info = vk::FramebufferCreateInfo::builder()
+						.render_pass(data.render_pass)
+						.attachments(attachments)
+						.width(data.swapchain_extent.width)
+						.height(data.swapchain_extent.height)
+						.layers(1);
+					unsafe { device.create_framebuffer(&info, None) }
+				})
+			.collect::<Result<Vec<_>,_>>()?;
 		Ok(())
 	}
 
@@ -485,6 +499,12 @@ use winit::window::Window;
 		let surf_loader = data.surface_loader.as_ref().unwrap();
 		unsafe
 		{
+			data.framebuffers
+				.iter()
+				.for_each(|fb|
+				{
+					device.destroy_framebuffer(*fb, None)
+				});
 			device.destroy_render_pass(data.render_pass, None);
 			data.swapchain_image_views
 				.iter()

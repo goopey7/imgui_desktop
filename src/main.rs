@@ -29,6 +29,7 @@ fn main() -> Result<()>
 	vh::create_swapchain(&instance, &device, &window, &mut data)?;
 	vh::create_swapchain_image_views(&device, &mut data)?;
 	vh::create_render_pass(&instance, &device, &mut data)?;
+	vh::create_framebuffers(&device, &mut data)?;
 
 	event_loop.run(move |event,_,control_flow|
 	{
