@@ -1,6 +1,8 @@
 pub mod vh
 {
-	use anyhow::{Result, anyhow};
+	use std::ffi::CString;
+
+use anyhow::{Result, anyhow};
 	use ash::vk;
 	use log::{trace, info, warn, error};
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
@@ -23,6 +25,8 @@ use winit::window::Window;
 		swapchain_image_views: Vec<vk::ImageView>,
 		render_pass: vk::RenderPass,
 		framebuffers: Vec<vk::Framebuffer>,
+		pipeline_layout: vk::PipelineLayout,
+		pipeline: vk::Pipeline,
 		debug_utils: Option<ash::extensions::ext::DebugUtils>,
 		messenger: Option<vk::DebugUtilsMessengerEXT>,
 	}
@@ -493,6 +497,129 @@ use winit::window::Window;
 		Ok(())
 	}
 
+	unsafe fn create_shader_module(device: &ash::Device, bytecode: &[u8]) -> Result<vk::ShaderModule>
+	{
+		let (prefix, code, suffix) = bytecode.align_to::<u32>();
+		if !prefix.is_empty() || !suffix.is_empty()
+		{
+			return Err(anyhow!("Shader bytecode not properly aligned"));
+		}
+
+		let info = vk::ShaderModuleCreateInfo::builder()
+			.code(code);
+
+		Ok(device.create_shader_module(&info, None)?)
+	}
+
+
+	pub fn create_pipeline(device: &ash::Device, data: &mut Data) -> Result<()>
+	{
+		let vert = include_bytes!("../shaders/vert.spv");
+		let frag = include_bytes!("../shaders/frag.spv");
+
+		let vert_sm = unsafe { create_shader_module(device, vert)? } ;
+		let frag_sm = unsafe { create_shader_module(device, frag)? } ;
+
+		let entry_func_name = CString::new("main").unwrap();
+
+		let vert_stage = vk::PipelineShaderStageCreateInfo::builder()
+			.stage(vk::ShaderStageFlags::VERTEX)
+			.module(vert_sm)
+			.name(&entry_func_name);
+
+		let frag_stage = vk::PipelineShaderStageCreateInfo::builder()
+			.stage(vk::ShaderStageFlags::FRAGMENT)
+			.module(frag_sm)
+			.name(&entry_func_name);
+
+		let stages = &[vert_stage.build(), frag_stage.build()];
+
+		let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder();
+
+		let input_assembly_info = vk::PipelineInputAssemblyStateCreateInfo::builder()
+			.topology(vk::PrimitiveTopology::TRIANGLE_LIST)
+			.primitive_restart_enable(false);
+
+		let viewport = vk::Viewport::builder()
+			.x(0.0)
+			.y(0.0)
+			.width(data.swapchain_extent.width as f32)
+			.height(data.swapchain_extent.height as f32)
+			.min_depth(0.0)
+			.max_depth(1.0);
+		let viewports = &[viewport.build()];
+
+		let scissor = vk::Rect2D::builder()
+			.offset(vk::Offset2D {x: 0, y:0 })
+			.extent(data.swapchain_extent);
+		let scissors = &[scissor.build()];
+
+		let viewport_info = vk::PipelineViewportStateCreateInfo::builder()
+			.viewports(viewports)
+			.scissors(scissors);
+
+		let rasterizer_info = vk::PipelineRasterizationStateCreateInfo::builder()
+			.line_width(1.0)
+			.front_face(vk::FrontFace::COUNTER_CLOCKWISE)
+			.cull_mode(vk::CullModeFlags::BACK)
+			.polygon_mode(vk::PolygonMode::FILL);
+
+		let multisampler_info = vk::PipelineMultisampleStateCreateInfo::builder()
+			.rasterization_samples(vk::SampleCountFlags::TYPE_1);
+
+		let color_blend_attachment = vk::PipelineColorBlendAttachmentState::builder()
+			.color_write_mask(vk::ColorComponentFlags::R
+				| vk::ColorComponentFlags::G
+				| vk::ColorComponentFlags::B
+				| vk::ColorComponentFlags::A
+				)
+			.blend_enable(false)
+			.src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
+			.dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
+			.color_blend_op(vk::BlendOp::ADD)
+			.src_alpha_blend_factor(vk::BlendFactor::ONE)
+			.dst_alpha_blend_factor(vk::BlendFactor::ZERO)
+			.alpha_blend_op(vk::BlendOp::ADD);
+		let blend_attachments = &[color_blend_attachment.build()];
+
+		let color_blend_state = vk::PipelineColorBlendStateCreateInfo::builder()
+			.logic_op_enable(false)
+			.logic_op(vk::LogicOp::COPY)
+			.attachments(blend_attachments)
+			.blend_constants([0.0,0.0,0.0,0.0]);
+
+		let layout_info = vk::PipelineLayoutCreateInfo::builder();
+		data.pipeline_layout = unsafe { device.create_pipeline_layout(&layout_info, None)? };
+
+		let info = vk::GraphicsPipelineCreateInfo::builder()
+			.stages(stages)
+			.vertex_input_state(&vertex_input_info)
+			.input_assembly_state(&input_assembly_info)
+			.viewport_state(&viewport_info)
+			.rasterization_state(&rasterizer_info)
+			.multisample_state(&multisampler_info)
+			.color_blend_state(&color_blend_state)
+			.layout(data.pipeline_layout)
+			.render_pass(data.render_pass)
+			.subpass(0);
+
+		data.pipeline = unsafe { device
+			.create_graphics_pipelines(
+				vk::PipelineCache::null(),
+				&[info.build()],
+				None,
+				).expect("Pipeline creation failed!")
+		}[0];
+
+		unsafe
+		{
+			device.destroy_shader_module(vert_sm, None);
+			device.destroy_shader_module(frag_sm, None);
+		}
+
+		Ok(())
+	}
+
 	pub fn destroy_vulkan(instance: &ash::Instance, device: &ash::Device, data: &mut Data)
 	{
 		let swap_loader = data.swapchain_loader.as_ref().unwrap();
@@ -505,6 +632,8 @@ use winit::window::Window;
 				{
 					device.destroy_framebuffer(*fb, None)
 				});
+			device.destroy_pipeline(data.pipeline, None);
+			device.destroy_pipeline_layout(data.pipeline_layout, None);
 			device.destroy_render_pass(data.render_pass, None);
 			data.swapchain_image_views
 				.iter()
