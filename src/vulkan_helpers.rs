@@ -9,8 +9,6 @@ use winit::window::Window;
 	#[derive(Default)]
 	pub struct Data
 	{
-		instance: Option<ash::Instance>,
-		device: Option<ash::Device>,
 		surface_loader: Option<ash::extensions::khr::Surface>,
 		surface: vk::SurfaceKHR,
 		physical_device: vk::PhysicalDevice,
@@ -23,6 +21,8 @@ use winit::window::Window;
 		swapchain_format: vk::Format,
 		swapchain_extent: vk::Extent2D,
 		swapchain_image_views: Vec<vk::ImageView>,
+		render_pass: vk::RenderPass,
+		framebuffers: Vec<vk::Framebuffer>,
 		debug_utils: Option<ash::extensions::ext::DebugUtils>,
 		messenger: Option<vk::DebugUtilsMessengerEXT>,
 	}
@@ -83,7 +83,7 @@ use winit::window::Window;
 		}
 	}
 
-	pub fn create_instance(entry: &ash::Entry, window: &Window, enable_validation: bool, data: &mut Data) -> Result<()>
+	pub fn create_instance(entry: &ash::Entry, window: &Window, enable_validation: bool, data: &mut Data) -> Result<ash::Instance>
 	{
 		let engine_name = std::ffi::CString::new("goopEngine")?;
 		let app_name = std::ffi::CString::new("Crab Game")?;
@@ -158,11 +158,10 @@ use winit::window::Window;
 			messenger = unsafe { Some(debug_utils.as_ref().unwrap().create_debug_utils_messenger(&debug_info, None)?) };
 		}
 
-		data.instance = Some(instance);
 		data.debug_utils = debug_utils;
 		data.messenger = messenger;
 
-		Ok(())
+		Ok(instance)
 	}
 
 	unsafe extern "system" fn vulkan_debug_utils_callback(
@@ -196,9 +195,8 @@ use winit::window::Window;
 		vk::FALSE
 	}
 
-	fn get_physical_device(data: &Data) -> Result<vk::PhysicalDevice>
+	fn get_physical_device(instance: &ash::Instance, data: &Data) -> Result<vk::PhysicalDevice>
 	{
-		let instance = &data.instance.as_ref().unwrap();
 		let phys_devices = unsafe { instance.enumerate_physical_devices()? };
 		let physical_device =
 		{
@@ -217,22 +215,32 @@ use winit::window::Window;
 		Ok(physical_device)
 	}
 
-	pub fn create_logical_device(data: &mut Data) -> Result<()>
+	pub fn create_logical_device(instance: &ash::Instance, data: &mut Data) -> Result<ash::Device>
 	{
-		let instance = &data.instance.as_ref().unwrap();
-		let physical_device = get_physical_device(&data)?;
+		let physical_device = get_physical_device(instance, &data)?;
 		let indices = QueueFamilyIndices::get(instance, physical_device, data.surface, &data.surface_loader.as_ref().unwrap())?;
 		let priorities = [1.0f32];
-		let queue_infos = [
-			vk::DeviceQueueCreateInfo::builder()
-				.queue_family_index(indices.graphics)
-				.queue_priorities(&priorities)
-				.build(),
-			vk::DeviceQueueCreateInfo::builder()
-				.queue_family_index(indices.transfer)
-				.queue_priorities(&priorities)
-				.build(),
-		];
+		let g_info = vk::DeviceQueueCreateInfo::builder()
+						.queue_family_index(indices.graphics)
+						.queue_priorities(&priorities);
+
+		let t_info = vk::DeviceQueueCreateInfo::builder()
+						.queue_family_index(indices.transfer)
+						.queue_priorities(&priorities);
+
+		let p_info = vk::DeviceQueueCreateInfo::builder()
+						.queue_family_index(indices.presentation)
+						.queue_priorities(&priorities);
+
+		let queue_infos = if indices.graphics == indices.presentation
+		{
+			vec![g_info.build(), t_info.build()]
+		}
+		else
+		{
+			vec![g_info.build(), t_info.build(), p_info.build()]
+		};
+
 		let enabled_extension_name_ptrs =
 			vec![ash::extensions::khr::Swapchain::name().as_ptr()];
 		let device_info = vk::DeviceCreateInfo::builder()
@@ -243,27 +251,26 @@ use winit::window::Window;
 		let transfer_queue = unsafe { logical_device.get_device_queue(indices.transfer, 0) };
 		let presentation_queue = unsafe { logical_device.get_device_queue(indices.presentation, 0) }; 
 
-		data.device = Some(logical_device);
 		data.physical_device = physical_device;
 		data.graphics_queue = graphics_queue;
 		data.transfer_queue = transfer_queue;
 		data.presentation_queue = presentation_queue;
 
-		Ok(())
+		Ok(logical_device)
 	}
 
-	pub fn create_surface(entry: &ash::Entry, window: &Window, data: &mut Data) -> Result<()>
+	pub fn create_surface(entry: &ash::Entry, instance: &ash::Instance, window: &Window, data: &mut Data) -> Result<()>
 	{
 		let surface = unsafe {
 			ash_window::create_surface(
 				&entry,
-				&data.instance.as_ref().unwrap(),
+				instance,
 				window.raw_display_handle(),
 				window.raw_window_handle(),
 				None,
 			)?
 		};
-		let surface_loader = ash::extensions::khr::Surface::new(&entry, &data.instance.as_ref().unwrap());
+		let surface_loader = ash::extensions::khr::Surface::new(&entry, &instance);
 
 		data.surface_loader = Some(surface_loader);
 		data.surface = surface;
@@ -321,7 +328,7 @@ use winit::window::Window;
 		}
 	}
 
-	pub fn create_swapchain(window: &Window, data: &mut Data) -> Result<()>
+	pub fn create_swapchain(instance: &ash::Instance, device: &ash::Device, window: &Window, data: &mut Data) -> Result<()>
 	{
 		let surface_capabilities = unsafe
 		{
@@ -351,7 +358,7 @@ use winit::window::Window;
 			image_count = surface_capabilities.max_image_count;
 		}
 
-		let indices = QueueFamilyIndices::get(&data.instance.as_ref().unwrap(), data.physical_device, data.surface, &data.surface_loader.as_ref().unwrap())?;
+		let indices = QueueFamilyIndices::get(instance, data.physical_device, data.surface, &data.surface_loader.as_ref().unwrap())?;
 
 		let mut queue_family_indices = vec![];
 		let image_sharing_mode = if indices.graphics != indices.presentation
@@ -384,7 +391,7 @@ use winit::window::Window;
 			.clipped(true)
 			.old_swapchain(vk::SwapchainKHR::null());
 
-		let swapchain_loader = ash::extensions::khr::Swapchain::new(&data.instance.as_ref().unwrap(), &data.device.as_ref().unwrap());
+		let swapchain_loader = ash::extensions::khr::Swapchain::new(instance, device);
 		let swapchain = unsafe { swapchain_loader.create_swapchain(&info, None)? };
 
 		data.swapchain = swapchain;
@@ -395,7 +402,7 @@ use winit::window::Window;
 		Ok(())
 	}
 
-	pub fn create_swapchain_image_views(data: &mut Data) -> Result<()>
+	pub fn create_swapchain_image_views(device: &ash::Device, data: &mut Data) -> Result<()>
 	{
 		let swapchain_images = unsafe { data.swapchain_loader.as_ref().unwrap().get_swapchain_images(data.swapchain)? };
 		let mut swapchain_image_views = Vec::with_capacity(swapchain_images.len());
@@ -413,7 +420,7 @@ use winit::window::Window;
 				.view_type(vk::ImageViewType::TYPE_2D)
 				.format(data.swapchain_format)
 				.subresource_range(*subresource);
-			let image_view = unsafe { data.device.as_ref().unwrap().create_image_view(&imageview_info, None)? };
+			let image_view = unsafe { device.create_image_view(&imageview_info, None)? };
 			swapchain_image_views.push(image_view);
 		}
 
@@ -423,14 +430,62 @@ use winit::window::Window;
 		Ok(())
 	}
 
-	pub fn destroy_vulkan(data: &mut Data)
+	pub fn create_render_pass(instance: &ash::Instance, device: &ash::Device, data: &mut Data) -> Result<()>
 	{
-		let device = data.device.as_ref().unwrap();
+		let color_attachment = vk::AttachmentDescription::builder()
+			.format(data.swapchain_format)
+			.samples(vk::SampleCountFlags::TYPE_1)
+			.load_op(vk::AttachmentLoadOp::CLEAR)
+			.store_op(vk::AttachmentStoreOp::STORE)
+			.stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
+			.stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
+			.initial_layout(vk::ImageLayout::UNDEFINED)
+			.final_layout(vk::ImageLayout::PRESENT_SRC_KHR);
+
+		let color_attachment_ref = vk::AttachmentReference::builder()
+			.attachment(0)
+			.layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+
+		let color_attachments = &[color_attachment_ref.build()];
+
+		let attachments = &[color_attachment.build()];
+
+		let subpass = vk::SubpassDescription::builder()
+			.pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
+			.color_attachments(color_attachments);
+
+		let dependency = vk::SubpassDependency::builder()
+			.src_subpass(vk::SUBPASS_EXTERNAL)
+			.dst_subpass(0)
+			.src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+			.dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+			.dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE);
+
+		let subpasses = &[subpass.build()];
+		let dependencies = &[dependency.build()];
+
+		let info = vk::RenderPassCreateInfo::builder()
+			.attachments(attachments)
+			.subpasses(subpasses)
+			.dependencies(dependencies);
+
+		data.render_pass = unsafe { device.create_render_pass(&info, None)? };
+
+		Ok(())
+	}
+
+	pub fn create_framebuffers(device: &ash::Device, data: &mut Data) -> Result<()>
+	{
+		Ok(())
+	}
+
+	pub fn destroy_vulkan(instance: &ash::Instance, device: &ash::Device, data: &mut Data)
+	{
 		let swap_loader = data.swapchain_loader.as_ref().unwrap();
 		let surf_loader = data.surface_loader.as_ref().unwrap();
-		let instance = data.instance.as_ref().unwrap();
 		unsafe
 		{
+			device.destroy_render_pass(data.render_pass, None);
 			data.swapchain_image_views
 				.iter()
 				.for_each(|iv|
