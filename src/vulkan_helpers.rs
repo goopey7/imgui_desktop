@@ -423,7 +423,7 @@ use winit::window::Window;
 		Ok(())
 	}
 
-	pub fn destroy_vulkan(data: &mut Data) -> Result<()>
+	pub fn destroy_vulkan(data: &mut Data)
 	{
 		let device = data.device.as_ref().unwrap();
 		let swap_loader = data.swapchain_loader.as_ref().unwrap();
@@ -448,6 +448,5 @@ use winit::window::Window;
 
 			instance.destroy_instance(None)
 		};
-		Ok(())
 	}
 }

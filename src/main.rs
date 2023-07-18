@@ -2,7 +2,7 @@ use anyhow::Result;
 
 mod vulkan_helpers;
 use vulkan_helpers::vh::{self, Data};
-use winit::{event_loop::EventLoop, window::WindowBuilder, dpi::LogicalSize};
+use winit::{event_loop::{EventLoop, ControlFlow}, window::WindowBuilder, dpi::LogicalSize, event::{Event, WindowEvent}};
 
 const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
 const MAX_FRAMES_IN_FLIGHT: usize = 3;
@@ -18,6 +18,8 @@ fn main() -> Result<()>
 		.with_title("Vulkan Tutorial (Rust)")
 		.with_inner_size(LogicalSize::new(1024, 768))
 		.build(&event_loop)?;
+	let mut destroying = false;
+	let mut minimized = false;
 
 	let entry = unsafe { ash::Entry::load()? };
 
@@ -27,9 +29,42 @@ fn main() -> Result<()>
 	vh::create_swapchain(&window, &mut data)?;
 	vh::create_swapchain_image_views(&mut data)?;
 
-	vh::destroy_vulkan(&mut data)?;
-
-	Ok(())
+	event_loop.run(move |event,_,control_flow|
+	{
+		*control_flow = ControlFlow::Poll;
+		match event
+		{
+			// Render a frame if our Vulkan app is not being destroyed.
+			Event::MainEventsCleared if !destroying && !minimized =>
+			{
+				// RENDER HERE
+			},
+			// Check for resize
+			Event::WindowEvent {event: WindowEvent::Resized(size), ..} =>
+			{
+				if size.width == 0 || size.height == 0
+				{
+					minimized = true;
+				}
+				else
+				{
+					minimized = false;
+				}
+			},
+			// Handle Input
+			Event::WindowEvent {event: WindowEvent::KeyboardInput { input, .. }, .. } =>
+			{
+			},
+			// Destroy App
+			Event::WindowEvent { event: WindowEvent::CloseRequested, .. } =>
+			{
+				destroying = true;
+				*control_flow = ControlFlow::Exit;
+				vh::destroy_vulkan(&mut data);
+			},
+			_ => {}
+		}
+	})
 }
 
 
