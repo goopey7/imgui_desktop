@@ -11,7 +11,6 @@ use winit::window::Window;
 	#[derive(Default)]
 	pub struct Data
 	{
-		surface_loader: Option<ash::extensions::khr::Surface>,
 		surface: vk::SurfaceKHR,
 		physical_device: vk::PhysicalDevice,
 		graphics_queue: vk::Queue,
@@ -27,6 +26,9 @@ use winit::window::Window;
 		framebuffers: Vec<vk::Framebuffer>,
 		pipeline_layout: vk::PipelineLayout,
 		pipeline: vk::Pipeline,
+		graphics_command_pool: vk::CommandPool,
+		transfer_command_pool: vk::CommandPool,
+		graphics_command_buffers: Vec<vk::CommandBuffer>,
 		debug_utils: Option<ash::extensions::ext::DebugUtils>,
 		messenger: Option<vk::DebugUtilsMessengerEXT>,
 	}
@@ -219,10 +221,10 @@ use winit::window::Window;
 		Ok(physical_device)
 	}
 
-	pub fn create_logical_device(instance: &ash::Instance, data: &mut Data) -> Result<ash::Device>
+	pub fn create_logical_device(instance: &ash::Instance, surface_loader: &ash::extensions::khr::Surface, data: &mut Data) -> Result<ash::Device>
 	{
 		let physical_device = get_physical_device(instance, &data)?;
-		let indices = QueueFamilyIndices::get(instance, physical_device, data.surface, &data.surface_loader.as_ref().unwrap())?;
+		let indices = QueueFamilyIndices::get(instance, physical_device, data.surface, surface_loader)?;
 		let priorities = [1.0f32];
 		let g_info = vk::DeviceQueueCreateInfo::builder()
 						.queue_family_index(indices.graphics)
@@ -263,7 +265,7 @@ use winit::window::Window;
 		Ok(logical_device)
 	}
 
-	pub fn create_surface(entry: &ash::Entry, instance: &ash::Instance, window: &Window, data: &mut Data) -> Result<()>
+	pub fn create_surface(entry: &ash::Entry, instance: &ash::Instance, window: &Window, data: &mut Data) -> Result<ash::extensions::khr::Surface>
 	{
 		let surface = unsafe {
 			ash_window::create_surface(
@@ -274,12 +276,11 @@ use winit::window::Window;
 				None,
 			)?
 		};
-		let surface_loader = ash::extensions::khr::Surface::new(&entry, &instance);
 
-		data.surface_loader = Some(surface_loader);
 		data.surface = surface;
 
-		Ok(())
+		let surface_loader = ash::extensions::khr::Surface::new(&entry, &instance);
+		Ok(surface_loader)
 	}
 
 	fn get_swapchain_surface_format(formats: &[vk::SurfaceFormatKHR]) -> vk::SurfaceFormatKHR
@@ -332,19 +333,19 @@ use winit::window::Window;
 		}
 	}
 
-	pub fn create_swapchain(instance: &ash::Instance, device: &ash::Device, window: &Window, data: &mut Data) -> Result<()>
+	pub fn create_swapchain(instance: &ash::Instance, device: &ash::Device, surface_loader: &ash::extensions::khr::Surface, window: &Window, data: &mut Data) -> Result<()>
 	{
 		let surface_capabilities = unsafe
 		{
-			data.surface_loader.as_ref().unwrap().get_physical_device_surface_capabilities(data.physical_device, data.surface)?
+			surface_loader.get_physical_device_surface_capabilities(data.physical_device, data.surface)?
 		};
 		let surface_present_modes = unsafe
 		{
-			data.surface_loader.as_ref().unwrap().get_physical_device_surface_present_modes(data.physical_device, data.surface)?
+			surface_loader.get_physical_device_surface_present_modes(data.physical_device, data.surface)?
 		};
 		let surface_formats = unsafe
 		{
-			data.surface_loader.as_ref().unwrap().get_physical_device_surface_formats(data.physical_device, data.surface)?
+			surface_loader.get_physical_device_surface_formats(data.physical_device, data.surface)?
 		};
 
 		let surface_present_mode = get_swapchain_present_mode(&surface_present_modes);
@@ -362,7 +363,7 @@ use winit::window::Window;
 			image_count = surface_capabilities.max_image_count;
 		}
 
-		let indices = QueueFamilyIndices::get(instance, data.physical_device, data.surface, &data.surface_loader.as_ref().unwrap())?;
+		let indices = QueueFamilyIndices::get(instance, data.physical_device, data.surface, surface_loader)?;
 
 		let mut queue_family_indices = vec![];
 		let image_sharing_mode = if indices.graphics != indices.presentation
@@ -620,12 +621,71 @@ use winit::window::Window;
 		Ok(())
 	}
 
-	pub fn destroy_vulkan(instance: &ash::Instance, device: &ash::Device, data: &mut Data)
+	pub fn create_command_pools(instance: &ash::Instance, device: &ash::Device, surface_loader: &ash::extensions::khr::Surface, data: &mut Data) -> Result<()>
+	{
+		let indices = QueueFamilyIndices::get(instance, data.physical_device, data.surface, surface_loader)?;
+
+		let graphics_pool_info = vk::CommandPoolCreateInfo::builder()
+			.queue_family_index(indices.graphics);
+		data.graphics_command_pool = unsafe { device.create_command_pool(&graphics_pool_info, None)? };
+
+		let transfer_pool_info = vk::CommandPoolCreateInfo::builder()
+			.queue_family_index(indices.transfer);
+		data.transfer_command_pool = unsafe { device.create_command_pool(&transfer_pool_info, None)? };
+
+		Ok(())
+	}
+
+	pub fn create_command_buffers(device: &ash::Device, data: &mut Data) -> Result<()>
+	{
+		let g_allocate_info = vk::CommandBufferAllocateInfo::builder()
+			.command_pool(data.graphics_command_pool)
+			.command_buffer_count(data.framebuffers.len() as u32);
+		data.graphics_command_buffers = unsafe { device.allocate_command_buffers(&g_allocate_info)? };
+
+		for (i, &cb) in data.graphics_command_buffers.iter().enumerate()
+		{
+			let g_begin_info = vk::CommandBufferBeginInfo::builder();
+			unsafe { device.begin_command_buffer(cb, &g_begin_info)? };
+
+			let render_area = vk::Rect2D::builder()
+				.offset(vk::Offset2D::default())
+				.extent(data.swapchain_extent);
+
+			let color_clear_value = vk::ClearValue {
+				color: vk::ClearColorValue {
+					float32: [0.0,0.0,0.0,1.0],
+				}
+			};
+			
+			let clear_values = &[color_clear_value];
+
+			let info = vk::RenderPassBeginInfo::builder()
+				.render_pass(data.render_pass)
+				.framebuffer(data.framebuffers[i])
+				.render_area(*render_area)
+				.clear_values(clear_values);
+
+			unsafe
+			{
+				device.cmd_begin_render_pass(cb, &info, vk::SubpassContents::INLINE);
+				device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, data.pipeline);
+				device.cmd_draw(cb, 3, 1, 0, 0);
+				device.cmd_end_render_pass(cb);
+				device.end_command_buffer(cb)?;
+			}
+		}
+
+		Ok(())
+	}
+
+	pub fn destroy_vulkan(instance: &ash::Instance, device: &ash::Device, surface_loader: &ash::extensions::khr::Surface, data: &mut Data)
 	{
 		let swap_loader = data.swapchain_loader.as_ref().unwrap();
-		let surf_loader = data.surface_loader.as_ref().unwrap();
 		unsafe
 		{
+			device.destroy_command_pool(data.graphics_command_pool, None);
+			device.destroy_command_pool(data.transfer_command_pool, None);
 			data.framebuffers
 				.iter()
 				.for_each(|fb|
@@ -644,7 +704,7 @@ use winit::window::Window;
 			);
 			swap_loader.destroy_swapchain(data.swapchain, None);
 			device.destroy_device(None);
-			surf_loader.destroy_surface(data.surface, None);
+			surface_loader.destroy_surface(data.surface, None);
 			if let (Some(deb_utils), Some(msgr)) = (data.debug_utils.as_ref(), data.messenger.as_ref())
 			{
 				deb_utils.destroy_debug_utils_messenger(*msgr, None);

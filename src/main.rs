@@ -24,13 +24,15 @@ fn main() -> Result<()>
 	let entry = unsafe { ash::Entry::load()? };
 
 	let instance = vh::create_instance(&entry, &window, VALIDATION_ENABLED, &mut data)?;
-	vh::create_surface(&entry, &instance, &window, &mut data)?;
-	let device = vh::create_logical_device(&instance, &mut data)?;
-	vh::create_swapchain(&instance, &device, &window, &mut data)?;
+	let surface = vh::create_surface(&entry, &instance, &window, &mut data)?;
+	let device = vh::create_logical_device(&instance, &surface, &mut data)?;
+	vh::create_swapchain(&instance, &device, &surface, &window, &mut data)?;
 	vh::create_swapchain_image_views(&device, &mut data)?;
 	vh::create_render_pass(&instance, &device, &mut data)?;
 	vh::create_pipeline(&device, &mut data)?;
 	vh::create_framebuffers(&device, &mut data)?;
+	vh::create_command_pools(&instance, &device, &surface, &mut data)?;
+	vh::create_command_buffers(&device, &mut data)?;
 
 	event_loop.run(move |event,_,control_flow|
 	{
@@ -63,7 +65,7 @@ fn main() -> Result<()>
 			{
 				destroying = true;
 				*control_flow = ControlFlow::Exit;
-				vh::destroy_vulkan(&instance, &device, &mut data);
+				vh::destroy_vulkan(&instance, &device, &surface, &mut data);
 			},
 			_ => {}
 		}
