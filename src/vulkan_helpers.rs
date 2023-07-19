@@ -63,11 +63,17 @@ const MAX_FRAMES_IN_FLIGHT: usize = 3;
 				.position(|properties| properties.queue_flags.contains(vk::QueueFlags::GRAPHICS))
 				.map(|index| index as u32);
 
-			let transfer = properties
+			let mut transfer = properties
 				.iter()
 				.position(|properties| properties.queue_flags.contains(vk::QueueFlags::TRANSFER)
 					&& !properties.queue_flags.contains(vk::QueueFlags::GRAPHICS))
 				.map(|index| index as u32);
+
+			// TODO come up with better way to handle this
+			if transfer.is_none()
+			{
+				transfer = graphics;
+			}
 
 			let mut presentation = None;
 			for(index, _properties) in properties.iter().enumerate()
@@ -215,11 +221,16 @@ const MAX_FRAMES_IN_FLIGHT: usize = 3;
 			let mut chosen = Err(anyhow!("no appropriate physical device available"));
 			for pd in phys_devices
 			{
-				let props = unsafe { instance.get_physical_device_properties(pd) };
+				chosen = Ok(pd);
+				//let props = unsafe { instance.get_physical_device_properties(pd) };
+
+				//TODO figure out better way
+				/*
 				if props.device_type == vk::PhysicalDeviceType::DISCRETE_GPU
 				{
 					chosen = Ok(pd);
 				}
+				*/
 			}
 			chosen?
 		};
@@ -244,14 +255,19 @@ const MAX_FRAMES_IN_FLIGHT: usize = 3;
 						.queue_family_index(indices.presentation)
 						.queue_priorities(&priorities);
 
-		let queue_infos = if indices.graphics == indices.presentation
+		let mut queue_infos = if indices.graphics == indices.presentation
 		{
-			vec![*g_info, *t_info]
+			vec![*g_info]
 		}
 		else
 		{
-			vec![*g_info, *t_info, *p_info]
+			vec![*g_info, *p_info]
 		};
+
+		if indices.graphics != indices.transfer
+		{
+			queue_infos.push(*t_info);
+		}
 
 		let enabled_extension_name_ptrs =
 			vec![ash::extensions::khr::Swapchain::name().as_ptr()];
@@ -372,18 +388,23 @@ const MAX_FRAMES_IN_FLIGHT: usize = 3;
 		let indices = QueueFamilyIndices::get(instance, data.physical_device, data.surface, surface_loader)?;
 
 		let mut queue_family_indices = vec![];
-		let image_sharing_mode = if indices.graphics != indices.presentation
+		let image_sharing_mode = if indices.graphics != indices.presentation && indices.graphics != indices.transfer
 			{
 				queue_family_indices.push(indices.graphics);
 				queue_family_indices.push(indices.presentation);
 				queue_family_indices.push(indices.transfer);
 				vk::SharingMode::EXCLUSIVE
 			}
+			else if indices.graphics != indices.presentation
+			{
+				queue_family_indices.push(indices.graphics);
+				queue_family_indices.push(indices.presentation);
+				vk::SharingMode::CONCURRENT
+			}
 			else
 			{
 				queue_family_indices.push(indices.graphics);
-				queue_family_indices.push(indices.transfer);
-				vk::SharingMode::CONCURRENT
+				vk::SharingMode::EXCLUSIVE
 			};
 
 		let info = vk::SwapchainCreateInfoKHR::builder()
