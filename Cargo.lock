@@ -1299,6 +1299,7 @@ dependencies = [
  "lazy_static",
  "log",
  "nalgebra-glm",
+ "png",
  "pretty_env_logger",
  "raw-window-handle 0.5.2",
  "winit",
