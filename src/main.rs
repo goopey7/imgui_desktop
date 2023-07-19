@@ -63,7 +63,7 @@ fn main() -> Result<()>
 			{
 				destroying = true;
 				*control_flow = ControlFlow::Exit;
-				vh::destroy_vulkan(&instance, &device, &surface, &data);
+				unsafe { vh::destroy(&instance, &device, &surface, &data); }
 			},
 			_ => {}
 		}

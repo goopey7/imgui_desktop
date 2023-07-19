@@ -820,10 +820,8 @@ const MAX_FRAMES_IN_FLIGHT: usize = 3;
 		swap_loader.destroy_swapchain(data.swapchain, None);
 	}
 
-	pub fn destroy_vulkan(instance: &ash::Instance, device: &ash::Device, surface_loader: &ash::extensions::khr::Surface, data: &Data)
+	pub unsafe fn destroy(instance: &ash::Instance, device: &ash::Device, surface_loader: &ash::extensions::khr::Surface, data: &Data)
 	{
-		unsafe
-		{
 			device.device_wait_idle().unwrap();
 			destroy_swapchain(device, data);
 			data.images_in_flight
@@ -847,6 +845,5 @@ const MAX_FRAMES_IN_FLIGHT: usize = 3;
 				du.destroy_debug_utils_messenger(*msg, None);
 			}
 			instance.destroy_instance(None);
-		};
 	}
 }
