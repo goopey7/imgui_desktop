@@ -30,6 +30,7 @@ fn main() -> Result<()>
 	vh::create_framebuffers(&device, &mut data)?;
 	vh::create_command_pools(&instance, &device, &surface, &mut data)?;
 	vh::create_vertex_buffer(&instance, &device, &mut data)?;
+	vh::create_index_buffer(&instance, &device, &mut data)?;
 	vh::create_command_buffers(&device, &mut data)?;
 	vh::create_sync_objects(&device, &mut data)?;
 

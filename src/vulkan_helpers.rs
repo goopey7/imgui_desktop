@@ -15,11 +15,14 @@ pub mod vh
 	lazy_static!
 	{
 		static ref VERTICES: Vec<Vertex> = vec![
-			Vertex::new(glm::vec2(0.0, -0.5), glm::vec3(1.0, 0.0, 0.0)),
+			Vertex::new(glm::vec2(-0.5, -0.5), glm::vec3(1.0, 0.0, 0.0)),
+			Vertex::new(glm::vec2(0.5, -0.5), glm::vec3(1.0, 0.0, 0.0)),
 			Vertex::new(glm::vec2(0.5, 0.5), glm::vec3(0.0, 1.0, 0.0)),
-			Vertex::new(glm::vec2(-0.5, 0.5), glm::vec3(0.0, 0.0, 1.0)),
+			Vertex::new(glm::vec2(-0.5, 0.5), glm::vec3(0.0, 1.0, 1.0)),
 		];
 	}
+
+	const INDICES: &[u16] = &[0, 1, 2, 2, 3, 0];
 
 	#[derive(Default, Clone)]
 	pub struct Data
@@ -49,6 +52,8 @@ pub mod vh
 		images_in_flight: Vec<vk::Fence>,
 		vertex_buffer: vk::Buffer,
 		vertex_buffer_memory: vk::DeviceMemory,
+		index_buffer: vk::Buffer,
+		index_buffer_memory: vk::DeviceMemory,
 		debug_utils: Option<ash::extensions::ext::DebugUtils>,
 		messenger: Option<vk::DebugUtilsMessengerEXT>,
 	}
@@ -885,6 +890,53 @@ pub mod vh
 		Ok(())
 	}
 
+	pub fn create_index_buffer(instance: &ash::Instance, device: &ash::Device, data: &mut Data) -> Result<()>
+	{
+		let size = (size_of::<u32>() * INDICES.len()) as u64;
+
+		unsafe
+		{
+			let (staging_buffer, staging_buffer_memory) = create_buffer(
+				instance,
+				device,
+				data,
+				size,
+				vk::BufferUsageFlags::TRANSFER_SRC,
+				vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
+			)?;
+
+			let memory = device.map_memory(
+				staging_buffer_memory,
+				0,
+				size,
+				vk::MemoryMapFlags::empty()
+				)?;
+
+			memcpy(INDICES.as_ptr(), memory.cast(), INDICES.len());
+
+			device.unmap_memory(staging_buffer_memory);
+
+			let (index_buffer, index_buffer_memory) = create_buffer(
+				instance,
+				device,
+				data,
+				size,
+				vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::INDEX_BUFFER,
+				vk::MemoryPropertyFlags::DEVICE_LOCAL
+			)?;
+
+			data.index_buffer = index_buffer;
+			data.index_buffer_memory = index_buffer_memory;
+
+			copy_buffer(device, data, staging_buffer, index_buffer, size)?;
+
+			device.destroy_buffer(staging_buffer, None);
+			device.free_memory(staging_buffer_memory, None);
+		}
+
+		Ok(())
+	}
+
 	pub fn create_command_buffers(device: &ash::Device, data: &mut Data) -> Result<()>
 	{
 		let g_allocate_info = vk::CommandBufferAllocateInfo::builder()
@@ -920,7 +972,8 @@ pub mod vh
 				device.cmd_begin_render_pass(cb, &info, vk::SubpassContents::INLINE);
 				device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, data.pipeline);
 				device.cmd_bind_vertex_buffers(cb, 0, &[data.vertex_buffer], &[0]);
-				device.cmd_draw(cb, VERTICES.len() as u32, 1, 0, 0);
+				device.cmd_bind_index_buffer(cb, data.index_buffer, 0, vk::IndexType::UINT16);
+				device.cmd_draw_indexed(cb, INDICES.len() as u32, 1, 0, 0, 0);
 				device.cmd_end_render_pass(cb);
 				device.end_command_buffer(cb)?;
 			}
@@ -1068,6 +1121,8 @@ pub mod vh
 	{
 			device.device_wait_idle().unwrap();
 			destroy_swapchain(device, data);
+			device.destroy_buffer(data.index_buffer, None);
+			device.free_memory(data.index_buffer_memory, None);
 			device.destroy_buffer(data.vertex_buffer, None);
 			device.free_memory(data.vertex_buffer_memory, None);
 			data.images_in_flight
