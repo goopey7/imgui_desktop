@@ -2,6 +2,7 @@ use anyhow::Result;
 
 mod vulkan_helpers;
 use vulkan_helpers::vh::{self, Data};
+use std::time::Instant;
 use winit::{event_loop::{EventLoop, ControlFlow}, window::WindowBuilder, dpi::LogicalSize, event::{Event, WindowEvent}};
 
 const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
@@ -18,6 +19,8 @@ fn main() -> Result<()>
 	let mut destroying = false;
 	let mut minimized = false;
 
+	let start = Instant::now();
+
 	let mut data = Data::default();
 	let entry = unsafe { ash::Entry::load()? };
 	let instance = vh::create_instance(&entry, &window, VALIDATION_ENABLED, &mut data)?;
@@ -26,11 +29,15 @@ fn main() -> Result<()>
 	vh::create_swapchain(&instance, &device, &surface, &window, &mut data)?;
 	vh::create_swapchain_image_views(&device, &mut data)?;
 	vh::create_render_pass(&device, &mut data)?;
+	vh::create_descriptor_set_layout(&device, &mut data)?;
 	vh::create_pipeline(&device, &mut data)?;
 	vh::create_framebuffers(&device, &mut data)?;
 	vh::create_command_pools(&instance, &device, &surface, &mut data)?;
 	vh::create_vertex_buffer(&instance, &device, &mut data)?;
 	vh::create_index_buffer(&instance, &device, &mut data)?;
+	vh::create_uniform_buffers(&instance, &device, &mut data)?;
+	vh::create_descriptor_pool(&device, &mut data)?;
+	vh::create_descriptor_sets(&device, &mut data)?;
 	vh::create_command_buffers(&device, &mut data)?;
 	vh::create_sync_objects(&device, &mut data)?;
 
@@ -42,7 +49,7 @@ fn main() -> Result<()>
 			// Render a frame if our Vulkan app is not being destroyed.
 			Event::MainEventsCleared if !destroying && !minimized =>
 			{
-				vh::render(&instance, &device, &surface, &window, &mut data).unwrap();
+				vh::render(&instance, &device, &surface, &window, &mut data, &start).unwrap();
 			},
 			// Check for resize
 			Event::WindowEvent {event: WindowEvent::Resized(size), ..} =>
