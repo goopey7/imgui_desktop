@@ -5,7 +5,6 @@ use vulkan_helpers::vh::{self, Data};
 use winit::{event_loop::{EventLoop, ControlFlow}, window::WindowBuilder, dpi::LogicalSize, event::{Event, WindowEvent}};
 
 const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
-const MAX_FRAMES_IN_FLIGHT: usize = 3;
 
 fn main() -> Result<()>
 {
@@ -33,6 +32,7 @@ fn main() -> Result<()>
 	vh::create_framebuffers(&device, &mut data)?;
 	vh::create_command_pools(&instance, &device, &surface, &mut data)?;
 	vh::create_command_buffers(&device, &mut data)?;
+	vh::create_sync_objects(&device, &mut data)?;
 
 	event_loop.run(move |event,_,control_flow|
 	{
@@ -43,6 +43,7 @@ fn main() -> Result<()>
 			Event::MainEventsCleared if !destroying && !minimized =>
 			{
 				// RENDER HERE
+				vh::render(&device, &mut data).unwrap();
 			},
 			// Check for resize
 			Event::WindowEvent {event: WindowEvent::Resized(size), ..} =>
@@ -71,5 +72,4 @@ fn main() -> Result<()>
 		}
 	})
 }
-
 

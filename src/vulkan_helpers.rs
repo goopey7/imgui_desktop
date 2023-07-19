@@ -8,9 +8,12 @@ use anyhow::{Result, anyhow};
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use winit::window::Window;
 
-	#[derive(Default)]
+const MAX_FRAMES_IN_FLIGHT: usize = 3;
+
+	#[derive(Default, Clone)]
 	pub struct Data
 	{
+		frame: usize,
 		surface: vk::SurfaceKHR,
 		physical_device: vk::PhysicalDevice,
 		graphics_queue: vk::Queue,
@@ -29,6 +32,10 @@ use winit::window::Window;
 		graphics_command_pool: vk::CommandPool,
 		transfer_command_pool: vk::CommandPool,
 		graphics_command_buffers: Vec<vk::CommandBuffer>,
+		in_flight_fences: Vec<vk::Fence>,
+		image_available_semaphores: Vec<vk::Semaphore>,
+		render_finished_semaphores: Vec<vk::Semaphore>,
+		images_in_flight: Vec<vk::Fence>,
 		debug_utils: Option<ash::extensions::ext::DebugUtils>,
 		messenger: Option<vk::DebugUtilsMessengerEXT>,
 	}
@@ -240,11 +247,11 @@ use winit::window::Window;
 
 		let queue_infos = if indices.graphics == indices.presentation
 		{
-			vec![g_info.build(), t_info.build()]
+			vec![*g_info, *t_info]
 		}
 		else
 		{
-			vec![g_info.build(), t_info.build(), p_info.build()]
+			vec![*g_info, *t_info, *p_info]
 		};
 
 		let enabled_extension_name_ptrs =
@@ -451,9 +458,9 @@ use winit::window::Window;
 			.attachment(0)
 			.layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
 
-		let color_attachments = &[color_attachment_ref.build()];
+		let color_attachments = &[*color_attachment_ref];
 
-		let attachments = &[color_attachment.build()];
+		let attachments = &[*color_attachment];
 
 		let subpass = vk::SubpassDescription::builder()
 			.pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
@@ -466,8 +473,8 @@ use winit::window::Window;
 			.dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
 			.dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE);
 
-		let subpasses = &[subpass.build()];
-		let dependencies = &[dependency.build()];
+		let subpasses = &[*subpass];
+		let dependencies = &[*dependency];
 
 		let info = vk::RenderPassCreateInfo::builder()
 			.attachments(attachments)
@@ -533,7 +540,7 @@ use winit::window::Window;
 			.module(frag_sm)
 			.name(&entry_func_name);
 
-		let stages = &[vert_stage.build(), frag_stage.build()];
+		let stages = &[*vert_stage, *frag_stage];
 
 		let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder();
 
@@ -548,12 +555,12 @@ use winit::window::Window;
 			.height(data.swapchain_extent.height as f32)
 			.min_depth(0.0)
 			.max_depth(1.0);
-		let viewports = &[viewport.build()];
+		let viewports = &[*viewport];
 
 		let scissor = vk::Rect2D::builder()
 			.offset(vk::Offset2D {x: 0, y:0 })
 			.extent(data.swapchain_extent);
-		let scissors = &[scissor.build()];
+		let scissors = &[*scissor];
 
 		let viewport_info = vk::PipelineViewportStateCreateInfo::builder()
 			.viewports(viewports)
@@ -561,7 +568,7 @@ use winit::window::Window;
 
 		let rasterizer_info = vk::PipelineRasterizationStateCreateInfo::builder()
 			.line_width(1.0)
-			.front_face(vk::FrontFace::COUNTER_CLOCKWISE)
+			.front_face(vk::FrontFace::CLOCKWISE)
 			.cull_mode(vk::CullModeFlags::BACK)
 			.polygon_mode(vk::PolygonMode::FILL);
 
@@ -581,7 +588,7 @@ use winit::window::Window;
 			.src_alpha_blend_factor(vk::BlendFactor::ONE)
 			.dst_alpha_blend_factor(vk::BlendFactor::ZERO)
 			.alpha_blend_op(vk::BlendOp::ADD);
-		let blend_attachments = &[color_blend_attachment.build()];
+		let blend_attachments = &[*color_blend_attachment];
 
 		let color_blend_state = vk::PipelineColorBlendStateCreateInfo::builder()
 			.logic_op_enable(false)
@@ -607,7 +614,7 @@ use winit::window::Window;
 		data.pipeline = unsafe { device
 			.create_graphics_pipelines(
 				vk::PipelineCache::null(),
-				&[info.build()],
+				&[*info],
 				None,
 				).expect("Pipeline creation failed!")
 		}[0];
@@ -679,11 +686,100 @@ use winit::window::Window;
 		Ok(())
 	}
 
+	pub fn create_sync_objects(device: &ash::Device, data: &mut Data) -> Result<()>
+	{
+		let semaphore_info = vk::SemaphoreCreateInfo::builder();
+		let fence_info = vk::FenceCreateInfo::builder()
+						.flags(vk::FenceCreateFlags::SIGNALED);
+		for _ in 0..MAX_FRAMES_IN_FLIGHT
+		{
+			unsafe
+			{
+				data.image_available_semaphores.push(device.create_semaphore(&semaphore_info, None)?);
+				data.render_finished_semaphores.push(device.create_semaphore(&semaphore_info, None)?);
+				data.in_flight_fences.push(device.create_fence(&fence_info, None)?);
+			}
+		}
+
+		data.images_in_flight = data.swapchain_images.iter().map(|_| vk::Fence::null()).collect();
+
+		Ok(())
+	}
+
+	pub fn render(device: &ash::Device, data: &mut Data) -> Result<()>
+	{
+		let swapchain_loader = data.swapchain_loader.as_ref().unwrap();
+		let in_flight_fence = data.in_flight_fences[data.frame];
+
+		unsafe { device.wait_for_fences(&[in_flight_fence], true, u64::max_value())? };
+
+		let image_index = unsafe { swapchain_loader.acquire_next_image(
+			data.swapchain,
+			u64::max_value(),
+			data.image_available_semaphores[data.frame],
+			vk::Fence::null(),
+			)?.0 as usize
+		};
+
+		let image_in_flight = data.images_in_flight[image_index];
+
+		if image_in_flight != vk::Fence::null()
+		{
+			unsafe { device.wait_for_fences(&[image_in_flight], true, u64::max_value())? };
+		}
+
+		let wait_semaphores = &[data.image_available_semaphores[data.frame]];
+		let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
+		let command_buffers = &[data.graphics_command_buffers[image_index]];
+		let signal_semaphores = &[data.render_finished_semaphores[data.frame]];
+
+		let submit_info = vk::SubmitInfo::builder()
+			.wait_semaphores(wait_semaphores)
+			.wait_dst_stage_mask(wait_stages)
+			.command_buffers(command_buffers)
+			.signal_semaphores(signal_semaphores);
+
+		unsafe
+		{
+			device.reset_fences(&[in_flight_fence])?;
+			device.queue_submit(data.graphics_queue, &[*submit_info], in_flight_fence)?;
+		}
+
+		let swapchains = &[data.swapchain];
+		let image_indices = &[image_index as u32];
+		let present_info = vk::PresentInfoKHR::builder()
+			.wait_semaphores(signal_semaphores)
+			.swapchains(swapchains)
+			.image_indices(image_indices);
+
+		unsafe
+		{
+			swapchain_loader.queue_present(data.presentation_queue, &present_info)?;
+		}
+
+		data.frame = (data.frame + 1) % MAX_FRAMES_IN_FLIGHT;
+
+		Ok(())
+	}
+
 	pub fn destroy_vulkan(instance: &ash::Instance, device: &ash::Device, surface_loader: &ash::extensions::khr::Surface, data: &mut Data)
 	{
 		let swap_loader = data.swapchain_loader.as_ref().unwrap();
 		unsafe
 		{
+			device.device_wait_idle().unwrap();
+			data.images_in_flight
+				.iter()
+				.for_each(|f| device.destroy_fence(*f, None));
+			data.in_flight_fences
+				.iter()
+				.for_each(|f| device.destroy_fence(*f, None));
+			data.render_finished_semaphores
+				.iter()
+				.for_each(|s| device.destroy_semaphore(*s, None));
+			data.image_available_semaphores
+				.iter()
+				.for_each(|s| device.destroy_semaphore(*s, None));
 			device.destroy_command_pool(data.graphics_command_pool, None);
 			device.destroy_command_pool(data.transfer_command_pool, None);
 			data.framebuffers
