@@ -2,46 +2,9 @@ use anyhow::Result;
 
 mod vulkan_helpers;
 use vulkan_helpers::vh::{self, Data};
-use winit::{event_loop::{EventLoop, ControlFlow}, window::{WindowBuilder, Window}, dpi::LogicalSize, event::{Event, WindowEvent}};
+use winit::{event_loop::{EventLoop, ControlFlow}, window::WindowBuilder, dpi::LogicalSize, event::{Event, WindowEvent}};
 
 const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
-
-struct App
-{
-	device: ash::Device,
-	data: Data,
-}
-
-impl App
-{
-	fn create(window: &Window) -> Result<Self>
-	{
-		let mut data = Data::default();
-		let entry = unsafe { ash::Entry::load()? };
-		let instance = vh::create_instance(&entry, &window, VALIDATION_ENABLED, &mut data)?;
-		let surface = vh::create_surface(&entry, &instance, &window, &mut data)?;
-		let device = vh::create_logical_device(&instance, &surface, &mut data)?;
-		vh::create_swapchain(&instance, &device, &surface, &window, &mut data)?;
-		vh::create_swapchain_image_views(&device, &mut data)?;
-		vh::create_render_pass(&device, &mut data)?;
-		vh::create_pipeline(&device, &mut data)?;
-		vh::create_framebuffers(&device, &mut data)?;
-		vh::create_command_pools(&instance, &device, &surface, &mut data)?;
-		vh::create_command_buffers(&device, &mut data)?;
-		vh::create_sync_objects(&device, &mut data)?;
-		Ok( Self { device, data, } )
-	}
-
-	fn render(&mut self)
-	{
-		vh::render(&self.device, &mut self.data).unwrap();
-	}
-
-	fn destroy(&mut self)
-	{
-		vh::destroy_vulkan(&self.device, &mut self.data);
-	}
-}
 
 fn main() -> Result<()>
 {
@@ -55,7 +18,20 @@ fn main() -> Result<()>
 	let mut destroying = false;
 	let mut minimized = false;
 
-	let mut app = App::create(&window)?;
+	let mut data = Data::default();
+	let entry = unsafe { ash::Entry::load()? };
+	let instance = vh::create_instance(&entry, &window, VALIDATION_ENABLED, &mut data)?;
+	let surface = vh::create_surface(&entry, &instance, &window, &mut data)?;
+	let device = vh::create_logical_device(&instance, &surface, &mut data)?;
+	vh::create_swapchain(&instance, &device, &surface, &window, &mut data)?;
+	vh::create_swapchain_image_views(&device, &mut data)?;
+	vh::create_render_pass(&device, &mut data)?;
+	vh::create_pipeline(&device, &mut data)?;
+	vh::create_framebuffers(&device, &mut data)?;
+	vh::create_command_pools(&instance, &device, &surface, &mut data)?;
+	vh::create_command_buffers(&device, &mut data)?;
+	vh::create_sync_objects(&device, &mut data)?;
+
 	event_loop.run(move |event,_,control_flow|
 	{
 		*control_flow = ControlFlow::Poll;
@@ -64,7 +40,7 @@ fn main() -> Result<()>
 			// Render a frame if our Vulkan app is not being destroyed.
 			Event::MainEventsCleared if !destroying && !minimized =>
 			{
-				app.render();
+				vh::render(&instance, &device, &surface, &window, &mut data).unwrap();
 			},
 			// Check for resize
 			Event::WindowEvent {event: WindowEvent::Resized(size), ..} =>
@@ -87,7 +63,7 @@ fn main() -> Result<()>
 			{
 				destroying = true;
 				*control_flow = ControlFlow::Exit;
-				app.destroy();
+				vh::destroy_vulkan(&instance, &device, &surface, &data);
 			},
 			_ => {}
 		}

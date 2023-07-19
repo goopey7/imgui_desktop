@@ -1,12 +1,11 @@
 pub mod vh
 {
 	use std::ffi::CString;
-
-use anyhow::{Result, anyhow};
+	use anyhow::{Result, anyhow};
 	use ash::vk;
 	use log::{trace, info, warn, error};
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-use winit::window::Window;
+	use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+	use winit::window::Window;
 
 const MAX_FRAMES_IN_FLIGHT: usize = 3;
 
@@ -706,19 +705,26 @@ const MAX_FRAMES_IN_FLIGHT: usize = 3;
 		Ok(())
 	}
 
-	pub fn render(device: &ash::Device, data: &mut Data) -> Result<()>
+	pub fn render(instance: &ash::Instance, device: &ash::Device, surface_loader: &ash::extensions::khr::Surface, window: &Window, data: &mut Data) -> Result<()>
 	{
 		let swapchain_loader = data.swapchain_loader.as_ref().unwrap();
 		let in_flight_fence = data.in_flight_fences[data.frame];
 
 		unsafe { device.wait_for_fences(&[in_flight_fence], true, u64::max_value())? };
 
-		let image_index = unsafe { swapchain_loader.acquire_next_image(
+		let result = unsafe { swapchain_loader.acquire_next_image(
 			data.swapchain,
 			u64::max_value(),
 			data.image_available_semaphores[data.frame],
 			vk::Fence::null(),
-			)?.0 as usize
+			)
+		};
+
+		let image_index = match result
+		{
+			Ok((image_index, _)) => image_index as usize,
+			Err(ash::vk::Result::ERROR_OUT_OF_DATE_KHR) => return recreate_swapchain(instance, device, surface_loader, window, data),
+			Err(e) => return Err(anyhow!(e)),
 		};
 
 		let image_in_flight = data.images_in_flight[image_index];
@@ -754,7 +760,16 @@ const MAX_FRAMES_IN_FLIGHT: usize = 3;
 
 		unsafe
 		{
-			swapchain_loader.queue_present(data.presentation_queue, &present_info)?;
+			let result = swapchain_loader.queue_present(data.presentation_queue, &present_info);
+			let changed = result == Err(vk::Result::SUBOPTIMAL_KHR) || result == Err(vk::Result::ERROR_OUT_OF_DATE_KHR);
+			if changed
+			{
+				recreate_swapchain(instance, device, surface_loader, window, data)?;
+			}
+			else if let Err(e) = result
+			{
+				return Err(anyhow!(e));
+			}
 		}
 
 		data.frame = (data.frame + 1) % MAX_FRAMES_IN_FLIGHT;
@@ -762,12 +777,55 @@ const MAX_FRAMES_IN_FLIGHT: usize = 3;
 		Ok(())
 	}
 
-	pub fn destroy_vulkan(device: &ash::Device, data: &mut Data)
+	fn recreate_swapchain(instance: &ash::Instance, device: &ash::Device, surface_loader: &ash::extensions::khr::Surface, window: &Window, data: &mut Data) -> Result<()>
 	{
+		unsafe
+		{
+			device.device_wait_idle()?;
+			destroy_swapchain(device, data);
+		}
+
+		create_swapchain(instance, device, surface_loader, window, data)?;
+		create_swapchain_image_views(device, data)?;
+		create_render_pass(&device, data)?;
+		create_pipeline(&device, data)?;
+		create_framebuffers(&device, data)?;
+		create_command_buffers(&device, data)?;
+		data.images_in_flight
+			.resize(data.swapchain_images.len(), vk::Fence::null());
+
+		Ok(())
+	}
+
+	unsafe fn destroy_swapchain(device: &ash::Device, data: &Data)
+	{
+		data.framebuffers
+			.iter()
+			.for_each(|fb|
+			{
+				device.destroy_framebuffer(*fb, None)
+			});
+		device.free_command_buffers(data.graphics_command_pool, &data.graphics_command_buffers);
+		device.destroy_pipeline(data.pipeline, None);
+		device.destroy_pipeline_layout(data.pipeline_layout, None);
+		device.destroy_render_pass(data.render_pass, None);
+		data.swapchain_image_views
+			.iter()
+			.for_each(|iv|
+			{
+				device.destroy_image_view(*iv, None)
+			}
+		);
 		let swap_loader = data.swapchain_loader.as_ref().unwrap();
+		swap_loader.destroy_swapchain(data.swapchain, None);
+	}
+
+	pub fn destroy_vulkan(instance: &ash::Instance, device: &ash::Device, surface_loader: &ash::extensions::khr::Surface, data: &Data)
+	{
 		unsafe
 		{
 			device.device_wait_idle().unwrap();
+			destroy_swapchain(device, data);
 			data.images_in_flight
 				.iter()
 				.for_each(|f| device.destroy_fence(*f, None));
@@ -782,23 +840,13 @@ const MAX_FRAMES_IN_FLIGHT: usize = 3;
 				.for_each(|s| device.destroy_semaphore(*s, None));
 			device.destroy_command_pool(data.graphics_command_pool, None);
 			device.destroy_command_pool(data.transfer_command_pool, None);
-			data.framebuffers
-				.iter()
-				.for_each(|fb|
-				{
-					device.destroy_framebuffer(*fb, None)
-				});
-			device.destroy_pipeline(data.pipeline, None);
-			device.destroy_pipeline_layout(data.pipeline_layout, None);
-			device.destroy_render_pass(data.render_pass, None);
-			data.swapchain_image_views
-				.iter()
-				.for_each(|iv|
-				{
-					device.destroy_image_view(*iv, None)
-				}
-			);
-			swap_loader.destroy_swapchain(data.swapchain, None);
+			device.destroy_device(None);
+			surface_loader.destroy_surface(data.surface, None);
+			if let (Some(du), Some(msg)) = (data.debug_utils.as_ref(), data.messenger.as_ref())
+			{
+				du.destroy_debug_utils_messenger(*msg, None);
+			}
+			instance.destroy_instance(None);
 		};
 	}
 }
