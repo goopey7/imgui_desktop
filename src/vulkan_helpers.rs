@@ -208,7 +208,7 @@ const MAX_FRAMES_IN_FLIGHT: usize = 3;
 		vk::FALSE
 	}
 
-	fn get_physical_device(instance: &ash::Instance, data: &Data) -> Result<vk::PhysicalDevice>
+	fn get_physical_device(instance: &ash::Instance) -> Result<vk::PhysicalDevice>
 	{
 		let phys_devices = unsafe { instance.enumerate_physical_devices()? };
 		let physical_device =
@@ -230,7 +230,7 @@ const MAX_FRAMES_IN_FLIGHT: usize = 3;
 
 	pub fn create_logical_device(instance: &ash::Instance, surface_loader: &ash::extensions::khr::Surface, data: &mut Data) -> Result<ash::Device>
 	{
-		let physical_device = get_physical_device(instance, &data)?;
+		let physical_device = get_physical_device(instance)?;
 		let indices = QueueFamilyIndices::get(instance, physical_device, data.surface, surface_loader)?;
 		let priorities = [1.0f32];
 		let g_info = vk::DeviceQueueCreateInfo::builder()
@@ -442,7 +442,7 @@ const MAX_FRAMES_IN_FLIGHT: usize = 3;
 		Ok(())
 	}
 
-	pub fn create_render_pass(instance: &ash::Instance, device: &ash::Device, data: &mut Data) -> Result<()>
+	pub fn create_render_pass(device: &ash::Device, data: &mut Data) -> Result<()>
 	{
 		let color_attachment = vk::AttachmentDescription::builder()
 			.format(data.swapchain_format)
@@ -799,14 +799,17 @@ const MAX_FRAMES_IN_FLIGHT: usize = 3;
 				}
 			);
 			swap_loader.destroy_swapchain(data.swapchain, None);
-			device.destroy_device(None);
-			surface_loader.destroy_surface(data.surface, None);
+			//device.destroy_device(None);
+			//surface_loader.destroy_surface(data.surface, None);
+
+			/*
 			if let (Some(deb_utils), Some(msgr)) = (data.debug_utils.as_ref(), data.messenger.as_ref())
 			{
-				deb_utils.destroy_debug_utils_messenger(*msgr, None);
+				//deb_utils.destroy_debug_utils_messenger(*msgr, None);
 			}
+			*/
 
-			instance.destroy_instance(None)
+			//instance.destroy_instance(None)
 		};
 	}
 }
