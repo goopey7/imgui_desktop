@@ -762,7 +762,7 @@ const MAX_FRAMES_IN_FLIGHT: usize = 3;
 		Ok(())
 	}
 
-	pub fn destroy_vulkan(instance: &ash::Instance, device: &ash::Device, surface_loader: &ash::extensions::khr::Surface, data: &mut Data)
+	pub fn destroy_vulkan(device: &ash::Device, data: &mut Data)
 	{
 		let swap_loader = data.swapchain_loader.as_ref().unwrap();
 		unsafe
@@ -799,17 +799,6 @@ const MAX_FRAMES_IN_FLIGHT: usize = 3;
 				}
 			);
 			swap_loader.destroy_swapchain(data.swapchain, None);
-			//device.destroy_device(None);
-			//surface_loader.destroy_surface(data.surface, None);
-
-			/*
-			if let (Some(deb_utils), Some(msgr)) = (data.debug_utils.as_ref(), data.messenger.as_ref())
-			{
-				//deb_utils.destroy_debug_utils_messenger(*msgr, None);
-			}
-			*/
-
-			//instance.destroy_instance(None)
 		};
 	}
 }

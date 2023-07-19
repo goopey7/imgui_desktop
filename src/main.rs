@@ -8,9 +8,7 @@ const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
 
 struct App
 {
-	instance: ash::Instance,
 	device: ash::Device,
-	surface: ash::extensions::khr::Surface,
 	data: Data,
 }
 
@@ -31,7 +29,7 @@ impl App
 		vh::create_command_pools(&instance, &device, &surface, &mut data)?;
 		vh::create_command_buffers(&device, &mut data)?;
 		vh::create_sync_objects(&device, &mut data)?;
-		Ok( Self { instance, device, surface, data, } )
+		Ok( Self { device, data, } )
 	}
 
 	fn render(&mut self)
@@ -41,7 +39,7 @@ impl App
 
 	fn destroy(&mut self)
 	{
-		vh::destroy_vulkan(&self.instance, &self.device, &self.surface, &mut self.data);
+		vh::destroy_vulkan(&self.device, &mut self.data);
 	}
 }
 
