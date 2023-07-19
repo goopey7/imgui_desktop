@@ -1,13 +1,25 @@
 pub mod vh
 {
 	use std::ffi::CString;
+	use std::mem::size_of;
+	use std::ptr::copy_nonoverlapping as memcpy;
 	use anyhow::{Result, anyhow};
 	use ash::vk;
 	use log::{trace, info, warn, error};
 	use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 	use winit::window::Window;
+	use nalgebra_glm as glm;
+	use lazy_static::lazy_static;
 
-const MAX_FRAMES_IN_FLIGHT: usize = 3;
+	const MAX_FRAMES_IN_FLIGHT: usize = 3;
+	lazy_static!
+	{
+		static ref VERTICES: Vec<Vertex> = vec![
+			Vertex::new(glm::vec2(0.0, -0.5), glm::vec3(1.0, 0.0, 0.0)),
+			Vertex::new(glm::vec2(0.5, 0.5), glm::vec3(0.0, 1.0, 0.0)),
+			Vertex::new(glm::vec2(-0.5, 0.5), glm::vec3(0.0, 0.0, 1.0)),
+		];
+	}
 
 	#[derive(Default, Clone)]
 	pub struct Data
@@ -35,6 +47,8 @@ const MAX_FRAMES_IN_FLIGHT: usize = 3;
 		image_available_semaphores: Vec<vk::Semaphore>,
 		render_finished_semaphores: Vec<vk::Semaphore>,
 		images_in_flight: Vec<vk::Fence>,
+		vertex_buffer: vk::Buffer,
+		vertex_buffer_memory: vk::DeviceMemory,
 		debug_utils: Option<ash::extensions::ext::DebugUtils>,
 		messenger: Option<vk::DebugUtilsMessengerEXT>,
 	}
@@ -539,6 +553,49 @@ const MAX_FRAMES_IN_FLIGHT: usize = 3;
 		Ok(device.create_shader_module(&info, None)?)
 	}
 
+	#[repr(C)]
+	#[derive(Copy, Clone, Debug)]
+	struct Vertex
+	{
+		pos: glm::Vec2,
+		color: glm::Vec3,
+	}
+
+	impl Vertex
+	{
+		fn new(pos: glm::Vec2, color: glm::Vec3) -> Self
+		{
+			Self { pos, color }
+		}
+
+		fn binding_description() -> vk::VertexInputBindingDescription
+		{
+			vk::VertexInputBindingDescription::builder()
+				.binding(0)
+				.stride(size_of::<Vertex>() as u32)
+				.input_rate(vk::VertexInputRate::VERTEX)
+				.build()
+		}
+
+		fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 2]
+		{
+			let pos = vk::VertexInputAttributeDescription::builder()
+				.binding(0)
+				.location(0)
+				.format(vk::Format::R32G32_SFLOAT)
+				.offset(0)
+				.build();
+
+			let color = vk::VertexInputAttributeDescription::builder()
+				.binding(0)
+				.location(1)
+				.format(vk::Format::R32G32B32_SFLOAT)
+				.offset(size_of::<glm::Vec2>() as u32)
+				.build();
+
+			[pos, color]
+		}
+	}
 
 	pub fn create_pipeline(device: &ash::Device, data: &mut Data) -> Result<()>
 	{
@@ -562,7 +619,11 @@ const MAX_FRAMES_IN_FLIGHT: usize = 3;
 
 		let stages = &[*vert_stage, *frag_stage];
 
-		let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder();
+		let binding_descriptions = &[Vertex::binding_description()];
+		let attribute_descriptions = Vertex::attribute_descriptions();
+		let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder()
+			.vertex_binding_descriptions(binding_descriptions)
+			.vertex_attribute_descriptions(&attribute_descriptions);
 
 		let input_assembly_info = vk::PipelineInputAssemblyStateCreateInfo::builder()
 			.topology(vk::PrimitiveTopology::TRIANGLE_LIST)
@@ -663,6 +724,167 @@ const MAX_FRAMES_IN_FLIGHT: usize = 3;
 		Ok(())
 	}
 
+	unsafe fn get_memory_type_index(
+		instance: &ash::Instance,
+		data: &Data,
+		properties: vk::MemoryPropertyFlags,
+		requirements: vk::MemoryRequirements,
+		) -> Result<u32>
+	{
+		let memory = instance.get_physical_device_memory_properties(data.physical_device);
+
+		(0..memory.memory_type_count)
+			.find(|i|
+				{
+					let suitable = (requirements.memory_type_bits & (1 << i)) != 0;
+					let memory_type = memory.memory_types[*i as usize];
+					suitable && memory_type.property_flags.contains(properties)
+				})
+			.ok_or_else(|| anyhow!("failed to find appropriate memory type"))
+	}
+
+	unsafe fn create_buffer(
+		instance: &ash::Instance,
+		device: &ash::Device,
+		data: &Data,
+		size: vk::DeviceSize,
+		usage: vk::BufferUsageFlags,
+		properties: vk::MemoryPropertyFlags,
+		) -> Result<(vk::Buffer, vk::DeviceMemory)>
+	{
+		let buffer_info = vk::BufferCreateInfo::builder()
+			.size(size)
+			.usage(usage)
+			.sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+		let buffer = device.create_buffer(&buffer_info, None)?;
+
+		let requirements = device.get_buffer_memory_requirements(buffer);
+
+		let memory_info = vk::MemoryAllocateInfo::builder()
+			.allocation_size(requirements.size)
+			.memory_type_index(get_memory_type_index(
+					instance,
+					data,
+					properties,
+					requirements
+					)?);
+
+		let buffer_memory = device.allocate_memory(&memory_info, None)?;
+
+		device.bind_buffer_memory(buffer, buffer_memory, 0)?;
+
+		Ok((buffer, buffer_memory))
+	}
+
+	unsafe fn begin_single_time_commands(
+		device: &ash::Device,
+		command_pool: vk::CommandPool,
+		) -> Result<vk::CommandBuffer>
+	{
+		let info = vk::CommandBufferAllocateInfo::builder()
+			.level(vk::CommandBufferLevel::PRIMARY)
+			.command_pool(command_pool)
+			.command_buffer_count(1);
+
+		let command_buffer = device.allocate_command_buffers(&info)?[0];
+
+		let info = vk::CommandBufferBeginInfo::builder()
+			.flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+
+		device.begin_command_buffer(command_buffer, &info)?;
+
+		Ok(command_buffer)
+	}
+
+	unsafe fn end_single_time_commands(
+		device: &ash::Device,
+		command_buffer: vk::CommandBuffer,
+		queue: vk::Queue,
+		command_pool: vk::CommandPool,
+		) -> Result<()>
+	{
+		device.end_command_buffer(command_buffer)?;
+
+		let command_buffers = &[command_buffer];
+		let info = vk::SubmitInfo::builder()
+			.command_buffers(command_buffers);
+
+		device.queue_submit(queue, &[*info], vk::Fence::null())?;
+		device.queue_wait_idle(queue)?;
+		device.free_command_buffers(command_pool, command_buffers);
+
+		Ok(())
+	}
+
+	unsafe fn copy_buffer(
+		device: &ash::Device,
+		data: &mut Data,
+		source: vk::Buffer,
+		destination: vk::Buffer,
+		size: vk::DeviceSize,
+		) -> Result<()>
+	{
+		let command_buffer = begin_single_time_commands(device, data.transfer_command_pool)?;
+
+		let regions = vk::BufferCopy::builder().size(size);
+		device.cmd_copy_buffer(command_buffer, source, destination, &[*regions]);
+
+		end_single_time_commands(
+			device,
+			command_buffer,
+			data.transfer_queue,
+			data.transfer_command_pool
+		)?;
+
+		Ok(())
+	}
+
+	pub fn create_vertex_buffer(instance: &ash::Instance, device: &ash::Device, data: &mut Data) -> Result<()>
+	{
+		let size = (size_of::<Vertex>() * VERTICES.len()) as u64;
+
+		unsafe {
+			let (staging_buffer, staging_buffer_memory) = create_buffer(
+				instance,
+				device,
+				data,
+				size,
+				vk::BufferUsageFlags::TRANSFER_SRC,
+				vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
+			)?;
+
+			let memory = device.map_memory(
+				staging_buffer_memory,
+				0,
+				size,
+				vk::MemoryMapFlags::empty()
+				)?;
+
+				memcpy(VERTICES.as_ptr(), memory.cast(), VERTICES.len());
+				device.unmap_memory(staging_buffer_memory);
+
+			let (vertex_buffer, vertex_buffer_memory) = create_buffer(
+				instance,
+				device,
+				data,
+				size,
+				vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::VERTEX_BUFFER,
+				vk::MemoryPropertyFlags::DEVICE_LOCAL,
+			)?;
+
+			data.vertex_buffer = vertex_buffer;
+			data.vertex_buffer_memory = vertex_buffer_memory;
+
+			copy_buffer(device, data, staging_buffer, vertex_buffer, size)?;
+
+			device.destroy_buffer(staging_buffer, None);
+			device.free_memory(staging_buffer_memory, None);
+		}
+
+		Ok(())
+	}
+
 	pub fn create_command_buffers(device: &ash::Device, data: &mut Data) -> Result<()>
 	{
 		let g_allocate_info = vk::CommandBufferAllocateInfo::builder()
@@ -697,7 +919,8 @@ const MAX_FRAMES_IN_FLIGHT: usize = 3;
 			{
 				device.cmd_begin_render_pass(cb, &info, vk::SubpassContents::INLINE);
 				device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, data.pipeline);
-				device.cmd_draw(cb, 3, 1, 0, 0);
+				device.cmd_bind_vertex_buffers(cb, 0, &[data.vertex_buffer], &[0]);
+				device.cmd_draw(cb, VERTICES.len() as u32, 1, 0, 0);
 				device.cmd_end_render_pass(cb);
 				device.end_command_buffer(cb)?;
 			}
@@ -845,6 +1068,8 @@ const MAX_FRAMES_IN_FLIGHT: usize = 3;
 	{
 			device.device_wait_idle().unwrap();
 			destroy_swapchain(device, data);
+			device.destroy_buffer(data.vertex_buffer, None);
+			device.free_memory(data.vertex_buffer_memory, None);
 			data.images_in_flight
 				.iter()
 				.for_each(|f| device.destroy_fence(*f, None));

@@ -12,7 +12,7 @@ fn main() -> Result<()>
 
 	let event_loop = EventLoop::new();
 	let window = WindowBuilder::new()
-		.with_title("Vulkan Tutorial (Rust)")
+		.with_title("Vulkan Tutorial (Ash)")
 		.with_inner_size(LogicalSize::new(1024, 768))
 		.build(&event_loop)?;
 	let mut destroying = false;
@@ -29,6 +29,7 @@ fn main() -> Result<()>
 	vh::create_pipeline(&device, &mut data)?;
 	vh::create_framebuffers(&device, &mut data)?;
 	vh::create_command_pools(&instance, &device, &surface, &mut data)?;
+	vh::create_vertex_buffer(&instance, &device, &mut data)?;
 	vh::create_command_buffers(&device, &mut data)?;
 	vh::create_sync_objects(&device, &mut data)?;
 
