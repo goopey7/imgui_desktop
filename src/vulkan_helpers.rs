@@ -1142,6 +1142,8 @@ pub mod vh
 
 		let (width, height) = reader.info().size();
 
+		data.mip_levels = (width.max(height) as f32).log2().floor() as u32 + 1;
+
 		unsafe
 		{
 			let (staging_buffer, staging_buffer_memory) = create_buffer(
