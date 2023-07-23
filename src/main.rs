@@ -37,6 +37,7 @@ fn main() -> Result<()>
 	vh::create_texture_image(&instance, &device, &mut data)?;
 	vh::create_texture_image_views(&device, &mut data)?;
 	vh::create_texture_sampler(&device, &mut data)?;
+	vh::load_model(&mut data)?;
 	vh::create_vertex_buffer(&instance, &device, &mut data)?;
 	vh::create_index_buffer(&instance, &device, &mut data)?;
 	vh::create_uniform_buffers(&instance, &device, &mut data)?;

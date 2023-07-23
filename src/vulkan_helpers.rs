@@ -3,33 +3,17 @@ pub mod vh
 	use std::{ffi::CString, fs::File};
 	use std::mem::size_of;
 	use std::ptr::copy_nonoverlapping as memcpy;
+	use std::collections::HashMap;
+	use std::hash::{Hash, Hasher};
+	use std::io::BufReader;
 	use anyhow::{Result, anyhow};
 	use ash::vk;
 	use log::{trace, info, warn, error};
 	use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 	use winit::window::Window;
 	use nalgebra_glm as glm;
-	use lazy_static::lazy_static;
 
-	const MAX_FRAMES_IN_FLIGHT: usize = 3;
-	lazy_static!
-	{
-		static ref VERTICES: Vec<Vertex> = vec![
-			Vertex::new(glm::vec3(-0.5, -0.5, 0.0), glm::vec3(1.0, 0.0, 0.0), glm::vec2(1.0,0.0)),
-			Vertex::new(glm::vec3(0.5, -0.5, 0.0), glm::vec3(1.0, 0.0, 0.0), glm::vec2(0.0,0.0)),
-			Vertex::new(glm::vec3(0.5, 0.5, 0.0), glm::vec3(0.0, 1.0, 0.0), glm::vec2(0.0,1.0)),
-			Vertex::new(glm::vec3(-0.5, 0.5, 0.0), glm::vec3(0.0, 1.0, 1.0), glm::vec2(1.0,1.0)),
-			Vertex::new(glm::vec3(-0.5, -0.5, -0.5), glm::vec3(1.0, 0.0, 0.0), glm::vec2(1.0,0.0)),
-			Vertex::new(glm::vec3(0.5, -0.5, -0.5), glm::vec3(1.0, 0.0, 0.0), glm::vec2(0.0,0.0)),
-			Vertex::new(glm::vec3(0.5, 0.5, -0.5), glm::vec3(0.0, 1.0, 0.0), glm::vec2(0.0,1.0)),
-			Vertex::new(glm::vec3(-0.5, 0.5, -0.5), glm::vec3(0.0, 1.0, 1.0), glm::vec2(1.0,1.0)),
-		];
-	}
-
-	const INDICES: &[u16] = &[
-		0, 1, 2, 2, 3, 0,
-		4, 5, 6, 6, 7, 4,
-	];
+	const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
 	#[derive(Default, Clone)]
 	pub struct Data
@@ -57,6 +41,8 @@ pub mod vh
 		image_available_semaphores: Vec<vk::Semaphore>,
 		render_finished_semaphores: Vec<vk::Semaphore>,
 		images_in_flight: Vec<vk::Fence>,
+		vertices: Vec<Vertex>,
+		indices: Vec<u32>,
 		vertex_buffer: vk::Buffer,
 		vertex_buffer_memory: vk::DeviceMemory,
 		index_buffer: vk::Buffer,
@@ -656,6 +642,33 @@ pub mod vh
 		}
 	}
 
+	impl PartialEq for Vertex
+	{
+		fn eq(&self, other: &Self) -> bool {
+			self.pos == other.pos
+				&& self.color == other.color
+				&& self.tex_coord == other.tex_coord
+		}
+	}
+
+	impl Eq for Vertex
+	{
+	}
+
+	impl Hash for Vertex
+	{
+		fn hash<H: Hasher>(&self, state: &mut H) {
+			self.pos[0].to_bits().hash(state);
+			self.pos[1].to_bits().hash(state);
+			self.pos[2].to_bits().hash(state);
+			self.color[0].to_bits().hash(state);
+			self.color[1].to_bits().hash(state);
+			self.color[2].to_bits().hash(state);
+			self.tex_coord[0].to_bits().hash(state);
+			self.tex_coord[1].to_bits().hash(state);
+		}
+	}
+
 	pub fn create_pipeline(device: &ash::Device, data: &mut Data) -> Result<()>
 	{
 		let vert = include_bytes!("../shaders/vert.spv");
@@ -1111,7 +1124,7 @@ pub mod vh
 
 	pub fn create_texture_image(instance: &ash::Instance, device: &ash::Device, data: &mut Data) -> Result<()>
 	{
-		let image = File::open("media/textures/texture.png")?;
+		let image = File::open("media/textures/viking_room.png")?;
 
 		let decoder = png::Decoder::new(image);
 		let mut reader = decoder.read_info()?;
@@ -1392,7 +1405,7 @@ pub mod vh
 
 	pub fn create_vertex_buffer(instance: &ash::Instance, device: &ash::Device, data: &mut Data) -> Result<()>
 	{
-		let size = (size_of::<Vertex>() * VERTICES.len()) as u64;
+		let size = (size_of::<Vertex>() * data.vertices.len()) as u64;
 
 		unsafe {
 			let (staging_buffer, staging_buffer_memory) = create_buffer(
@@ -1411,7 +1424,7 @@ pub mod vh
 				vk::MemoryMapFlags::empty()
 				)?;
 
-				memcpy(VERTICES.as_ptr(), memory.cast(), VERTICES.len());
+				memcpy(data.vertices.as_ptr(), memory.cast(), data.vertices.len());
 				device.unmap_memory(staging_buffer_memory);
 
 			let (vertex_buffer, vertex_buffer_memory) = create_buffer(
@@ -1437,7 +1450,7 @@ pub mod vh
 
 	pub fn create_index_buffer(instance: &ash::Instance, device: &ash::Device, data: &mut Data) -> Result<()>
 	{
-		let size = (size_of::<u32>() * INDICES.len()) as u64;
+		let size = (size_of::<u32>() * data.indices.len()) as u64;
 
 		unsafe
 		{
@@ -1457,7 +1470,7 @@ pub mod vh
 				vk::MemoryMapFlags::empty()
 				)?;
 
-			memcpy(INDICES.as_ptr(), memory.cast(), INDICES.len());
+			memcpy(data.indices.as_ptr(), memory.cast(), data.indices.len());
 
 			device.unmap_memory(staging_buffer_memory);
 
@@ -1654,7 +1667,7 @@ pub mod vh
 				device.cmd_begin_render_pass(cb, &info, vk::SubpassContents::INLINE);
 				device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, data.pipeline);
 				device.cmd_bind_vertex_buffers(cb, 0, &[data.vertex_buffer], &[0]);
-				device.cmd_bind_index_buffer(cb, data.index_buffer, 0, vk::IndexType::UINT16);
+				device.cmd_bind_index_buffer(cb, data.index_buffer, 0, vk::IndexType::UINT32);
 				device.cmd_bind_descriptor_sets(
 					cb,
 					vk::PipelineBindPoint::GRAPHICS,
@@ -1663,7 +1676,7 @@ pub mod vh
 					&[data.descriptor_sets[i]],
 					&[],
 				);
-				device.cmd_draw_indexed(cb, INDICES.len() as u32, 1, 0, 0, 0);
+				device.cmd_draw_indexed(cb, data.indices.len() as u32, 1, 0, 0, 0);
 				device.cmd_end_render_pass(cb);
 				device.end_command_buffer(cb)?;
 			}
@@ -1815,6 +1828,54 @@ pub mod vh
 		Ok(())
 	}
 
+	pub fn load_model(data: &mut Data) -> Result<()>
+	{
+		let mut reader = BufReader::new(File::open("media/models/viking_room.obj")?);
+
+		let (models, _) = tobj::load_obj_buf(
+			&mut reader,
+			&tobj::LoadOptions { triangulate: true, ..Default::default() },
+			|_| Ok(Default::default()),
+		)?;
+
+		let mut unique_vertices = HashMap::new();
+
+		for model in &models
+		{
+			for index in &model.mesh.indices
+			{
+				let pos_offset = (3 * index) as usize;
+				let tex_coord_offset = (2 * index) as usize;
+
+				let vertex = Vertex {
+					pos: glm::vec3(
+							 model.mesh.positions[pos_offset],
+							 model.mesh.positions[pos_offset + 1],
+							 model.mesh.positions[pos_offset + 2],
+							 ),
+					color: glm::vec3(1.0,1.0,1.0),
+					tex_coord: glm::vec2(
+						model.mesh.texcoords[tex_coord_offset],
+						1.0 - model.mesh.texcoords[tex_coord_offset + 1],
+						)
+				};
+
+				if let Some(index) = unique_vertices.get(&vertex)
+				{
+					data.indices.push(*index as u32);
+				}
+				else
+				{
+					let index = data.vertices.len();
+					unique_vertices.insert(vertex, index);
+					data.vertices.push(vertex);
+					data.indices.push(index as u32);
+				}
+			}
+		}
+		Ok(())
+	}
+
 	pub fn render(instance: &ash::Instance, device: &ash::Device, surface_loader: &ash::extensions::khr::Surface, window: &Window, data: &mut Data, start: &std::time::Instant) -> Result<()>
 	{
 		let swapchain_loader = data.swapchain_loader.as_ref().unwrap();
@@ -1901,6 +1962,7 @@ pub mod vh
 		create_swapchain_image_views(device, data)?;
 		create_render_pass(instance, device, data)?;
 		create_pipeline(device, data)?;
+		create_depth_objects(instance, device, data)?;
 		create_framebuffers(device, data)?;
 		create_uniform_buffers(instance, device, data)?;
 		create_descriptor_pool(device, data)?;
@@ -1914,6 +1976,9 @@ pub mod vh
 
 	unsafe fn destroy_swapchain(device: &ash::Device, data: &Data)
 	{
+		device.destroy_image(data.depth_image, None);
+		device.destroy_image_view(data.depth_image_view, None);
+		device.free_memory(data.depth_image_memory, None);
 		device.destroy_descriptor_pool(data.descriptor_pool, None);
 		device.destroy_image(data.texture_image, None);
 		device.free_memory(data.texture_image_memory, None);
@@ -1948,9 +2013,6 @@ pub mod vh
 	{
 			device.device_wait_idle().unwrap();
 			destroy_swapchain(device, data);
-			device.destroy_image(data.depth_image, None);
-			device.destroy_image_view(data.depth_image_view, None);
-			device.free_memory(data.depth_image_memory, None);
 			device.destroy_sampler(data.texture_sampler, None);
 			device.destroy_image_view(data.texture_image_view, None);
 			device.destroy_descriptor_set_layout(data.descriptor_set_layout, None);
