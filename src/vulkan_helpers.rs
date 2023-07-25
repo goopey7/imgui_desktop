@@ -1982,8 +1982,6 @@ pub mod vh
 		device.destroy_image_view(data.depth_image_view, None);
 		device.free_memory(data.depth_image_memory, None);
 		device.destroy_descriptor_pool(data.descriptor_pool, None);
-		device.destroy_image(data.texture_image, None);
-		device.free_memory(data.texture_image_memory, None);
 		data.uniform_buffers
 			.iter()
 			.for_each(|ub| device.destroy_buffer(*ub, None));
@@ -2013,35 +2011,37 @@ pub mod vh
 
 	pub unsafe fn destroy(instance: &ash::Instance, device: &ash::Device, surface_loader: &ash::extensions::khr::Surface, data: &Data)
 	{
-			device.device_wait_idle().unwrap();
-			destroy_swapchain(device, data);
-			device.destroy_sampler(data.texture_sampler, None);
-			device.destroy_image_view(data.texture_image_view, None);
-			device.destroy_descriptor_set_layout(data.descriptor_set_layout, None);
-			device.destroy_buffer(data.index_buffer, None);
-			device.free_memory(data.index_buffer_memory, None);
-			device.destroy_buffer(data.vertex_buffer, None);
-			device.free_memory(data.vertex_buffer_memory, None);
-			data.images_in_flight
-				.iter()
-				.for_each(|f| device.destroy_fence(*f, None));
-			data.in_flight_fences
-				.iter()
-				.for_each(|f| device.destroy_fence(*f, None));
-			data.render_finished_semaphores
-				.iter()
-				.for_each(|s| device.destroy_semaphore(*s, None));
-			data.image_available_semaphores
-				.iter()
-				.for_each(|s| device.destroy_semaphore(*s, None));
-			device.destroy_command_pool(data.graphics_command_pool, None);
-			device.destroy_command_pool(data.transfer_command_pool, None);
-			device.destroy_device(None);
-			surface_loader.destroy_surface(data.surface, None);
-			if let (Some(du), Some(msg)) = (data.debug_utils.as_ref(), data.messenger.as_ref())
-			{
-				du.destroy_debug_utils_messenger(*msg, None);
-			}
-			instance.destroy_instance(None);
+		device.device_wait_idle().unwrap();
+		destroy_swapchain(device, data);
+		device.destroy_sampler(data.texture_sampler, None);
+		device.destroy_image_view(data.texture_image_view, None);
+		device.destroy_image(data.texture_image, None);
+		device.free_memory(data.texture_image_memory, None);
+		device.destroy_descriptor_set_layout(data.descriptor_set_layout, None);
+		device.destroy_buffer(data.index_buffer, None);
+		device.free_memory(data.index_buffer_memory, None);
+		device.destroy_buffer(data.vertex_buffer, None);
+		device.free_memory(data.vertex_buffer_memory, None);
+		data.images_in_flight
+			.iter()
+			.for_each(|f| device.destroy_fence(*f, None));
+		data.in_flight_fences
+			.iter()
+			.for_each(|f| device.destroy_fence(*f, None));
+		data.render_finished_semaphores
+			.iter()
+			.for_each(|s| device.destroy_semaphore(*s, None));
+		data.image_available_semaphores
+			.iter()
+			.for_each(|s| device.destroy_semaphore(*s, None));
+		device.destroy_command_pool(data.graphics_command_pool, None);
+		device.destroy_command_pool(data.transfer_command_pool, None);
+		device.destroy_device(None);
+		surface_loader.destroy_surface(data.surface, None);
+		if let (Some(du), Some(msg)) = (data.debug_utils.as_ref(), data.messenger.as_ref())
+		{
+			du.destroy_debug_utils_messenger(*msg, None);
+		}
+		instance.destroy_instance(None);
 	}
 }
