@@ -13,7 +13,7 @@ pub mod vh
 	use winit::window::Window;
 	use nalgebra_glm as glm;
 
-	const MAX_FRAMES_IN_FLIGHT: usize = 2;
+	const MAX_FRAMES_IN_FLIGHT: usize = 3;
 
 	#[derive(Default, Clone)]
 	pub struct Data
@@ -769,7 +769,7 @@ pub mod vh
 				| vk::ColorComponentFlags::B
 				| vk::ColorComponentFlags::A
 				)
-			.blend_enable(false)
+			.blend_enable(true)
 			.src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
 			.dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
 			.color_blend_op(vk::BlendOp::ADD)
@@ -784,9 +784,21 @@ pub mod vh
 			.attachments(blend_attachments)
 			.blend_constants([0.0,0.0,0.0,0.0]);
 
+		let vert_push_constant_range = vk::PushConstantRange::builder()
+			.stage_flags(vk::ShaderStageFlags::VERTEX)
+			.offset(0)
+			.size(64 /* 16 x 4 byte floats */);
+
+		let frag_push_constant_range = vk::PushConstantRange::builder()
+			.stage_flags(vk::ShaderStageFlags::FRAGMENT)
+			.offset(64)
+			.size(4);
+
 		let set_layouts = &[data.descriptor_set_layout];
+		let push_constant_ranges = &[*vert_push_constant_range, *frag_push_constant_range];
 		let layout_info = vk::PipelineLayoutCreateInfo::builder()
-			.set_layouts(set_layouts);
+			.set_layouts(set_layouts)
+			.push_constant_ranges(push_constant_ranges);
 		data.pipeline_layout = unsafe { device.create_pipeline_layout(&layout_info, None)? };
 
 		let info = vk::GraphicsPipelineCreateInfo::builder()
@@ -1557,7 +1569,6 @@ pub mod vh
 	#[derive(Copy, Clone, Debug)]
 	struct UniformBufferObject
 	{
-		model: glm::Mat4,
 		view: glm::Mat4,
 		proj: glm::Mat4,
 	}
@@ -1662,6 +1673,9 @@ pub mod vh
 			.command_buffer_count(data.framebuffers.len() as u32);
 		data.graphics_command_buffers = unsafe { device.allocate_command_buffers(&g_allocate_info)? };
 
+		let model = glm::rotate(&glm::identity(), 0.0f32, &glm::vec3(0.0, 0.0, 1.0));
+		let (_, model_bytes, _) = unsafe { model.as_slice().align_to::<u8>() };
+
 		for (i, &cb) in data.graphics_command_buffers.iter().enumerate()
 		{
 			let g_begin_info = vk::CommandBufferBeginInfo::builder();
@@ -1706,6 +1720,20 @@ pub mod vh
 					0,
 					&[data.descriptor_sets[i]],
 					&[],
+				);
+				device.cmd_push_constants(
+					cb,
+					data.pipeline_layout,
+					vk::ShaderStageFlags::VERTEX,
+					0,
+					model_bytes,
+				);
+				device.cmd_push_constants(
+					cb,
+					data.pipeline_layout,
+					vk::ShaderStageFlags::FRAGMENT,
+					64,
+					&0.25f32.to_ne_bytes()[..],
 				);
 				device.cmd_draw_indexed(cb, data.indices.len() as u32, 1, 0, 0, 0);
 				device.cmd_end_render_pass(cb);
@@ -1761,7 +1789,7 @@ pub mod vh
 
 		proj[(1,1)] *= -1.0;
 
-		let ubo = UniformBufferObject { model, view, proj };
+		let ubo = UniformBufferObject { view, proj };
 
 		unsafe
 		{

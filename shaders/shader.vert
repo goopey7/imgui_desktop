@@ -2,10 +2,14 @@
 
 layout(binding = 0) uniform UniformBufferObject
 {
-	mat4 model;
 	mat4 view;
 	mat4 proj;
 } ubo;
+
+layout(push_constant) uniform PushConstants
+{
+	mat4 model;
+} pcs;
 
 layout(location = 0) in vec3 inPos;
 layout(location = 1) in vec3 inCol;
@@ -18,7 +22,7 @@ layout(location = 1) out vec2 fragTexCoord;
 // gets invoked for each vertex
 void main()
 {
-	gl_Position = ubo.proj * ubo.view * ubo.model * vec4(inPos, 1.0);
+	gl_Position = ubo.proj * ubo.view * pcs.model * vec4(inPos, 1.0);
 	fragColor = inCol;
 	fragTexCoord = inTexCoord;
 }
