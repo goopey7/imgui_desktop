@@ -836,12 +836,11 @@ pub mod vh
 		let indices = QueueFamilyIndices::get(instance, data.physical_device, data.surface, surface_loader)?;
 
 		let graphics_pool_info = vk::CommandPoolCreateInfo::builder()
-			.flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
+			.flags(vk::CommandPoolCreateFlags::TRANSIENT) //transient ie. shortlived
 			.queue_family_index(indices.graphics);
 		data.graphics_command_pool = unsafe { device.create_command_pool(&graphics_pool_info, None)? };
 
 		let transfer_pool_info = vk::CommandPoolCreateInfo::builder()
-			.flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
 			.queue_family_index(indices.transfer);
 		data.transfer_command_pool = unsafe { device.create_command_pool(&transfer_pool_info, None)? };
 
@@ -1933,11 +1932,16 @@ pub mod vh
 		Ok(())
 	}
 
-	fn update_command_buffer(device: &ash::Device, image_index: usize, data: &Data, start: &std::time::Instant) -> Result<()>
+	fn update_command_buffer(device: &ash::Device, image_index: usize, data: &mut Data, start: &std::time::Instant) -> Result<()>
 	{
-		let cb = data.graphics_command_buffers[image_index];
-
-		unsafe { device.reset_command_buffer(cb, vk::CommandBufferResetFlags::empty())?; }
+		let prev = data.graphics_command_buffers[image_index];
+		unsafe { device.free_command_buffers(data.graphics_command_pool, &[prev]) };
+		let allocate_info = vk::CommandBufferAllocateInfo::builder()
+			.command_pool(data.graphics_command_pool)
+			.level(vk::CommandBufferLevel::PRIMARY)
+			.command_buffer_count(1);
+		let cb = unsafe {device.allocate_command_buffers(&allocate_info)}?[0];
+		data.graphics_command_buffers[image_index] = cb;
 
 		let time = start.elapsed().as_secs_f32();
 
@@ -2016,7 +2020,7 @@ pub mod vh
 
 	pub fn render(instance: &ash::Instance, device: &ash::Device, surface_loader: &ash::extensions::khr::Surface, window: &Window, data: &mut Data, start: &std::time::Instant) -> Result<()>
 	{
-		let swapchain_loader = data.swapchain_loader.as_ref().unwrap();
+		let swapchain_loader = data.swapchain_loader.clone().unwrap();
 		let in_flight_fence = data.in_flight_fences[data.frame];
 
 		unsafe { device.wait_for_fences(&[in_flight_fence], true, u64::max_value())? };
