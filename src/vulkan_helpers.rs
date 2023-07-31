@@ -36,6 +36,7 @@ pub mod vh
 		framebuffers: Vec<vk::Framebuffer>,
 		pipeline_layout: vk::PipelineLayout,
 		pipeline: vk::Pipeline,
+		graphics_command_pools: Vec<vk::CommandPool>,
 		graphics_command_pool: vk::CommandPool,
 		transfer_command_pool: vk::CommandPool,
 		graphics_command_buffers: Vec<vk::CommandBuffer>,
@@ -830,19 +831,31 @@ pub mod vh
 
 		Ok(())
 	}
+	unsafe fn create_command_pool(
+		device: &ash::Device,
+		queue_family_index: u32,
+		) -> Result<vk::CommandPool>
+	{
+		let info = vk::CommandPoolCreateInfo::builder()
+			.flags(vk::CommandPoolCreateFlags::TRANSIENT)
+			.queue_family_index(queue_family_index);
+
+		Ok(device.create_command_pool(&info, None)?)
+	}
 
 	pub fn create_command_pools(instance: &ash::Instance, device: &ash::Device, surface_loader: &ash::extensions::khr::Surface, data: &mut Data) -> Result<()>
 	{
 		let indices = QueueFamilyIndices::get(instance, data.physical_device, data.surface, surface_loader)?;
 
-		let graphics_pool_info = vk::CommandPoolCreateInfo::builder()
-			.flags(vk::CommandPoolCreateFlags::TRANSIENT) //transient ie. shortlived
-			.queue_family_index(indices.graphics);
-		data.graphics_command_pool = unsafe { device.create_command_pool(&graphics_pool_info, None)? };
+		data.graphics_command_pool = unsafe { create_command_pool(device, indices.graphics)? };
+		data.transfer_command_pool = unsafe { create_command_pool(device, indices.transfer)? };
 
-		let transfer_pool_info = vk::CommandPoolCreateInfo::builder()
-			.queue_family_index(indices.transfer);
-		data.transfer_command_pool = unsafe { device.create_command_pool(&transfer_pool_info, None)? };
+		let num_images = data.swapchain_images.len();
+		for _ in 0..num_images
+		{
+			let g_command_pool = unsafe { create_command_pool(device, indices.graphics)? };
+			data.graphics_command_pools.push(g_command_pool);
+		}
 
 		Ok(())
 	}
@@ -1669,13 +1682,20 @@ pub mod vh
 
 	pub fn create_command_buffers(device: &ash::Device, data: &mut Data) -> Result<()>
 	{
-		let g_allocate_info = vk::CommandBufferAllocateInfo::builder()
-			.command_pool(data.graphics_command_pool)
-			.command_buffer_count(data.framebuffers.len() as u32);
-		data.graphics_command_buffers = unsafe { device.allocate_command_buffers(&g_allocate_info)? };
+		let num_images = data.swapchain_images.len();
+		for image_index in 0..num_images
+		{
+			let allocate_info = vk::CommandBufferAllocateInfo::builder()
+				.command_pool(data.graphics_command_pools[image_index])
+				.level(vk::CommandBufferLevel::PRIMARY)
+				.command_buffer_count(1);
 
+			let command_buffer = unsafe { device.allocate_command_buffers(&allocate_info) }?[0];
+			data.graphics_command_buffers.push(command_buffer);
+		}
 
 		Ok(())
+
 	}
 
 	pub fn create_sync_objects(device: &ash::Device, data: &mut Data) -> Result<()>
@@ -1934,13 +1954,10 @@ pub mod vh
 
 	fn update_command_buffer(device: &ash::Device, image_index: usize, data: &mut Data, start: &std::time::Instant) -> Result<()>
 	{
-		let prev = data.graphics_command_buffers[image_index];
-		unsafe { device.free_command_buffers(data.graphics_command_pool, &[prev]) };
-		let allocate_info = vk::CommandBufferAllocateInfo::builder()
-			.command_pool(data.graphics_command_pool)
-			.level(vk::CommandBufferLevel::PRIMARY)
-			.command_buffer_count(1);
-		let cb = unsafe {device.allocate_command_buffers(&allocate_info)}?[0];
+		let cp = data.graphics_command_pools[image_index];
+		unsafe { device.reset_command_pool(cp, vk::CommandPoolResetFlags::empty())? };
+		let cb = data.graphics_command_buffers[image_index];
+
 		data.graphics_command_buffers[image_index] = cb;
 
 		let time = start.elapsed().as_secs_f32();
@@ -2140,7 +2157,6 @@ pub mod vh
 			{
 				device.destroy_framebuffer(*fb, None)
 			});
-		device.free_command_buffers(data.graphics_command_pool, &data.graphics_command_buffers);
 		device.destroy_pipeline(data.pipeline, None);
 		device.destroy_pipeline_layout(data.pipeline_layout, None);
 		device.destroy_render_pass(data.render_pass, None);
@@ -2159,6 +2175,9 @@ pub mod vh
 	{
 		device.device_wait_idle().unwrap();
 		destroy_swapchain(device, data);
+		data.graphics_command_pools
+			.iter()
+			.for_each(|cp| device.destroy_command_pool(*cp, None));
 		device.destroy_sampler(data.texture_sampler, None);
 		device.destroy_image_view(data.texture_image_view, None);
 		device.destroy_image(data.texture_image, None);
