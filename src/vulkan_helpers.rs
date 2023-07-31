@@ -836,10 +836,12 @@ pub mod vh
 		let indices = QueueFamilyIndices::get(instance, data.physical_device, data.surface, surface_loader)?;
 
 		let graphics_pool_info = vk::CommandPoolCreateInfo::builder()
+			.flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
 			.queue_family_index(indices.graphics);
 		data.graphics_command_pool = unsafe { device.create_command_pool(&graphics_pool_info, None)? };
 
 		let transfer_pool_info = vk::CommandPoolCreateInfo::builder()
+			.flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
 			.queue_family_index(indices.transfer);
 		data.transfer_command_pool = unsafe { device.create_command_pool(&transfer_pool_info, None)? };
 
@@ -1673,73 +1675,6 @@ pub mod vh
 			.command_buffer_count(data.framebuffers.len() as u32);
 		data.graphics_command_buffers = unsafe { device.allocate_command_buffers(&g_allocate_info)? };
 
-		let model = glm::rotate(&glm::identity(), 0.0f32, &glm::vec3(0.0, 0.0, 1.0));
-		let (_, model_bytes, _) = unsafe { model.as_slice().align_to::<u8>() };
-
-		for (i, &cb) in data.graphics_command_buffers.iter().enumerate()
-		{
-			let g_begin_info = vk::CommandBufferBeginInfo::builder();
-			unsafe { device.begin_command_buffer(cb, &g_begin_info)? };
-
-			let render_area = vk::Rect2D::builder()
-				.offset(vk::Offset2D::default())
-				.extent(data.swapchain_extent);
-
-			let color_clear_value = vk::ClearValue {
-				color: vk::ClearColorValue {
-					float32: [0.0,0.0,0.0,1.0],
-				}
-			};
-			
-			let depth_clear_value = vk::ClearValue {
-				depth_stencil: vk::ClearDepthStencilValue
-					{
-						depth: 1.0,
-						stencil: 0,
-					}
-				};
-			
-			let clear_values = &[color_clear_value, depth_clear_value];
-
-			let info = vk::RenderPassBeginInfo::builder()
-				.render_pass(data.render_pass)
-				.framebuffer(data.framebuffers[i])
-				.render_area(*render_area)
-				.clear_values(clear_values);
-
-			unsafe
-			{
-				device.cmd_begin_render_pass(cb, &info, vk::SubpassContents::INLINE);
-				device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, data.pipeline);
-				device.cmd_bind_vertex_buffers(cb, 0, &[data.vertex_buffer], &[0]);
-				device.cmd_bind_index_buffer(cb, data.index_buffer, 0, vk::IndexType::UINT32);
-				device.cmd_bind_descriptor_sets(
-					cb,
-					vk::PipelineBindPoint::GRAPHICS,
-					data.pipeline_layout,
-					0,
-					&[data.descriptor_sets[i]],
-					&[],
-				);
-				device.cmd_push_constants(
-					cb,
-					data.pipeline_layout,
-					vk::ShaderStageFlags::VERTEX,
-					0,
-					model_bytes,
-				);
-				device.cmd_push_constants(
-					cb,
-					data.pipeline_layout,
-					vk::ShaderStageFlags::FRAGMENT,
-					64,
-					&0.25f32.to_ne_bytes()[..],
-				);
-				device.cmd_draw_indexed(cb, data.indices.len() as u32, 1, 0, 0, 0);
-				device.cmd_end_render_pass(cb);
-				device.end_command_buffer(cb)?;
-			}
-		}
 
 		Ok(())
 	}
@@ -1998,6 +1933,87 @@ pub mod vh
 		Ok(())
 	}
 
+	fn update_command_buffer(device: &ash::Device, image_index: usize, data: &Data, start: &std::time::Instant) -> Result<()>
+	{
+		let cb = data.graphics_command_buffers[image_index];
+
+		unsafe { device.reset_command_buffer(cb, vk::CommandBufferResetFlags::empty())?; }
+
+		let time = start.elapsed().as_secs_f32();
+
+		let model = glm::rotate(
+			&glm::identity(),
+			time * glm::radians(&glm::vec1(90.0))[0],
+			&glm::vec3(0.0, 0.0, 1.0),
+		);
+		let (_, model_bytes, _) = unsafe { model.as_slice().align_to::<u8>() };
+
+		let opacity = (0.5 * start.elapsed().as_secs_f32()).sin().abs();
+
+		let g_begin_info = vk::CommandBufferBeginInfo::builder();
+		unsafe { device.begin_command_buffer(cb, &g_begin_info)? };
+
+		let render_area = vk::Rect2D::builder()
+			.offset(vk::Offset2D::default())
+			.extent(data.swapchain_extent);
+
+		let color_clear_value = vk::ClearValue {
+			color: vk::ClearColorValue {
+				float32: [0.0,0.0,0.0,1.0],
+			}
+		};
+		
+		let depth_clear_value = vk::ClearValue {
+			depth_stencil: vk::ClearDepthStencilValue
+				{
+					depth: 1.0,
+					stencil: 0,
+				}
+			};
+		
+		let clear_values = &[color_clear_value, depth_clear_value];
+
+		let info = vk::RenderPassBeginInfo::builder()
+			.render_pass(data.render_pass)
+			.framebuffer(data.framebuffers[image_index])
+			.render_area(*render_area)
+			.clear_values(clear_values);
+
+		unsafe
+		{
+			device.cmd_begin_render_pass(cb, &info, vk::SubpassContents::INLINE);
+			device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, data.pipeline);
+			device.cmd_bind_vertex_buffers(cb, 0, &[data.vertex_buffer], &[0]);
+			device.cmd_bind_index_buffer(cb, data.index_buffer, 0, vk::IndexType::UINT32);
+			device.cmd_bind_descriptor_sets(
+				cb,
+				vk::PipelineBindPoint::GRAPHICS,
+				data.pipeline_layout,
+				0,
+				&[data.descriptor_sets[image_index]],
+				&[],
+			);
+			device.cmd_push_constants(
+				cb,
+				data.pipeline_layout,
+				vk::ShaderStageFlags::VERTEX,
+				0,
+				model_bytes,
+			);
+			device.cmd_push_constants(
+				cb,
+				data.pipeline_layout,
+				vk::ShaderStageFlags::FRAGMENT,
+				64,
+				&opacity.to_ne_bytes()[..],
+			);
+			device.cmd_draw_indexed(cb, data.indices.len() as u32, 1, 0, 0, 0);
+			device.cmd_end_render_pass(cb);
+			device.end_command_buffer(cb)?;
+		}
+		Ok(())
+	}
+
 	pub fn render(instance: &ash::Instance, device: &ash::Device, surface_loader: &ash::extensions::khr::Surface, window: &Window, data: &mut Data, start: &std::time::Instant) -> Result<()>
 	{
 		let swapchain_loader = data.swapchain_loader.as_ref().unwrap();
@@ -2027,6 +2043,7 @@ pub mod vh
 			unsafe { device.wait_for_fences(&[image_in_flight], true, u64::max_value())? };
 		}
 
+		update_command_buffer(device, image_index, data, start)?;
 		update_uniform_buffer(device, image_index, data, start)?;
 
 		let wait_semaphores = &[data.image_available_semaphores[data.frame]];
