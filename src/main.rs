@@ -27,12 +27,14 @@ fn main() -> Result<()>
 	let instance = vh::create_instance(&entry, &window, VALIDATION_ENABLED, &mut data)?;
 	let surface = vh::create_surface(&entry, &instance, &window, &mut data)?;
 	let device = vh::create_logical_device(&instance, &surface, &mut data)?;
+	vh::set_msaa_samples(&instance, &mut data)?;
 	vh::create_swapchain(&instance, &device, &surface, &window, &mut data)?;
 	vh::create_swapchain_image_views(&device, &mut data)?;
 	vh::create_render_pass(&instance, &device, &mut data)?;
 	vh::create_descriptor_set_layout(&device, &mut data)?;
 	vh::create_pipeline(&device, &mut data)?;
 	vh::create_command_pools(&instance, &device, &surface, &mut data)?;
+	vh::create_color_objects(&instance, &device, &mut data)?;
 	vh::create_depth_objects(&instance, &device, &mut data)?;
 	vh::create_framebuffers(&device, &mut data)?;
 	vh::create_texture_image(&instance, &device, &mut data)?;

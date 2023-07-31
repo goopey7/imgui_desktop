@@ -22,6 +22,7 @@ pub mod vh
 		frame: usize,
 		surface: vk::SurfaceKHR,
 		physical_device: vk::PhysicalDevice,
+		msaa_samples: vk::SampleCountFlags,
 		graphics_queue: vk::Queue,
 		transfer_queue: vk::Queue,
 		presentation_queue: vk::Queue,
@@ -61,6 +62,9 @@ pub mod vh
 		depth_image: vk::Image,
 		depth_image_memory: vk::DeviceMemory,
 		depth_image_view: vk::ImageView,
+		color_image: vk::Image,
+		color_image_memory: vk::DeviceMemory,
+		color_image_view: vk::ImageView,
 		debug_utils: Option<ash::extensions::ext::DebugUtils>,
 		messenger: Option<vk::DebugUtilsMessengerEXT>,
 	}
@@ -298,7 +302,9 @@ pub mod vh
 		let enabled_extension_name_ptrs =
 			vec![ash::extensions::khr::Swapchain::name().as_ptr()];
 		let features = vk::PhysicalDeviceFeatures::builder()
-			.sampler_anisotropy(true);
+			.sampler_anisotropy(true)
+			// Enable sample shading feature (aa on texture)
+			.sample_rate_shading(false);
 
 		let device_info = vk::DeviceCreateInfo::builder()
 			.enabled_features(&features)
@@ -502,7 +508,8 @@ pub mod vh
 			.stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
 			.stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
 			.initial_layout(vk::ImageLayout::UNDEFINED)
-			.final_layout(vk::ImageLayout::PRESENT_SRC_KHR);
+			.samples(data.msaa_samples)
+			.final_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
 
 		let color_attachment_ref = vk::AttachmentReference::builder()
 			.attachment(0)
@@ -512,7 +519,7 @@ pub mod vh
 
 		let depth_stencil_attachment = vk::AttachmentDescription::builder()
 			.format(unsafe { get_depth_format(instance, data)? })
-			.samples(vk::SampleCountFlags::TYPE_1)
+			.samples(data.msaa_samples)
 			.load_op(vk::AttachmentLoadOp::CLEAR)
 			.store_op(vk::AttachmentStoreOp::DONT_CARE)
 			.stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
@@ -524,9 +531,26 @@ pub mod vh
 			.attachment(1)
 			.layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
+		let resolve_attachment = vk::AttachmentDescription::builder()
+			.format(data.swapchain_format)
+			.samples(vk::SampleCountFlags::TYPE_1)
+			.load_op(vk::AttachmentLoadOp::DONT_CARE)
+			.store_op(vk::AttachmentStoreOp::STORE)
+			.stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
+			.stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
+			.initial_layout(vk::ImageLayout::UNDEFINED)
+			.final_layout(vk::ImageLayout::PRESENT_SRC_KHR);
+
+		let resolve_attachment_ref = vk::AttachmentReference::builder()
+			.attachment(2)
+			.layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+
+		let resolve_attachments = &[*resolve_attachment_ref];
+
 		let subpass = vk::SubpassDescription::builder()
 			.pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
 			.depth_stencil_attachment(&depth_stencil_attachment_ref)
+			.resolve_attachments(resolve_attachments)
 			.color_attachments(color_attachments);
 
 		let dependency = vk::SubpassDependency::builder()
@@ -544,7 +568,7 @@ pub mod vh
 				| vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE
 				);
 
-		let attachments = &[*color_attachment, *depth_stencil_attachment];
+		let attachments = &[*color_attachment, *depth_stencil_attachment, *resolve_attachment];
 		let subpasses = &[*subpass];
 		let dependencies = &[*dependency];
 
@@ -564,7 +588,7 @@ pub mod vh
 			.iter()
 			.map(|image_view|
 				{
-					let attachments = &[*image_view, data.depth_image_view];
+					let attachments = &[data.color_image_view, data.depth_image_view, *image_view];
 					let info = vk::FramebufferCreateInfo::builder()
 						.render_pass(data.render_pass)
 						.attachments(attachments)
@@ -733,7 +757,11 @@ pub mod vh
 			.polygon_mode(vk::PolygonMode::FILL);
 
 		let multisampler_info = vk::PipelineMultisampleStateCreateInfo::builder()
-			.rasterization_samples(vk::SampleCountFlags::TYPE_1);
+			// enable sample shading
+			//.sample_shading_enable(true)
+			//.min_sample_shading(0.2)
+			.sample_shading_enable(false)
+			.rasterization_samples(data.msaa_samples);
 
 		let color_blend_attachment = vk::PipelineColorBlendAttachmentState::builder()
 			.color_write_mask(vk::ColorComponentFlags::R
@@ -1811,8 +1839,7 @@ pub mod vh
 			data.swapchain_extent.width,
 			data.swapchain_extent.height,
 			1,
-			//data.msaa_samples,
-			vk::SampleCountFlags::TYPE_1,
+			data.msaa_samples,
 			format,
 			vk::ImageTiling::OPTIMAL,
 			vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
@@ -1876,6 +1903,70 @@ pub mod vh
 				}
 			}
 		}
+		Ok(())
+	}
+
+	pub fn set_msaa_samples(instance: &ash::Instance, data: &mut Data) -> Result<()>
+	{
+		data.msaa_samples = get_max_msaa_samples(instance, data);
+		Ok(())
+	}
+
+	fn get_max_msaa_samples(
+		instance: &ash::Instance,
+		data: &Data,
+		) -> vk::SampleCountFlags
+	{
+		let properties = unsafe { instance.get_physical_device_properties(data.physical_device) };
+		let counts = properties.limits.framebuffer_color_sample_counts
+			& properties.limits.framebuffer_depth_sample_counts;
+
+		[
+			vk::SampleCountFlags::TYPE_64,
+			vk::SampleCountFlags::TYPE_32,
+			vk::SampleCountFlags::TYPE_16,
+			vk::SampleCountFlags::TYPE_8,
+			vk::SampleCountFlags::TYPE_4,
+			vk::SampleCountFlags::TYPE_2,
+		]
+		.iter()
+		.cloned()
+		.find(|count| counts.contains(*count))
+		.unwrap_or(vk::SampleCountFlags::TYPE_1)
+	}
+
+	pub fn create_color_objects(
+		instance: &ash::Instance,
+		device: &ash::Device,
+		data: &mut Data,
+		) -> Result<()>
+	{
+		let (color_image, color_image_memory) = unsafe { create_image(
+			instance,
+			device,
+			data,
+			data.swapchain_extent.width,
+			data.swapchain_extent.height,
+			1,
+			data.msaa_samples,
+			data.swapchain_format,
+			vk::ImageTiling::OPTIMAL,
+			vk::ImageUsageFlags::COLOR_ATTACHMENT
+				| vk::ImageUsageFlags::TRANSIENT_ATTACHMENT,
+			vk::MemoryPropertyFlags::DEVICE_LOCAL,
+		)?};
+
+		data.color_image = color_image;
+		data.color_image_memory = color_image_memory;
+
+		data.color_image_view = unsafe { create_image_view(
+			device,
+			data.color_image,
+			data.swapchain_format,
+			vk::ImageAspectFlags::COLOR,
+			1,
+		)? };
+
 		Ok(())
 	}
 
@@ -1966,6 +2057,7 @@ pub mod vh
 		create_swapchain_image_views(device, data)?;
 		create_render_pass(instance, device, data)?;
 		create_pipeline(device, data)?;
+		create_color_objects(instance, device, data)?;
 		create_depth_objects(instance, device, data)?;
 		create_framebuffers(device, data)?;
 		create_uniform_buffers(instance, device, data)?;
@@ -1980,6 +2072,9 @@ pub mod vh
 
 	unsafe fn destroy_swapchain(device: &ash::Device, data: &Data)
 	{
+		device.destroy_image(data.color_image, None);
+		device.destroy_image_view(data.color_image_view, None);
+		device.free_memory(data.color_image_memory, None);
 		device.destroy_image(data.depth_image, None);
 		device.destroy_image_view(data.depth_image_view, None);
 		device.free_memory(data.depth_image_memory, None);
