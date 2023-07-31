@@ -40,6 +40,7 @@ pub mod vh
 		graphics_command_pool: vk::CommandPool,
 		transfer_command_pool: vk::CommandPool,
 		graphics_command_buffers: Vec<vk::CommandBuffer>,
+		secondary_command_buffers: Vec<Vec<vk::CommandBuffer>>, // multiple buffers per frame per model instance
 		in_flight_fences: Vec<vk::Fence>,
 		image_available_semaphores: Vec<vk::Semaphore>,
 		render_finished_semaphores: Vec<vk::Semaphore>,
@@ -1694,6 +1695,8 @@ pub mod vh
 			data.graphics_command_buffers.push(command_buffer);
 		}
 
+		data.secondary_command_buffers = vec![vec![]; data.swapchain_images.len()];
+
 		Ok(())
 
 	}
@@ -1721,12 +1724,6 @@ pub mod vh
 	fn update_uniform_buffer(device: &ash::Device, image_index: usize, data: &Data, start: &std::time::Instant) -> Result<()>
 	{
 		let time = start.elapsed().as_secs_f32();
-
-		let model = glm::rotate(
-			&glm::identity(),
-			time * glm::radians(&glm::vec1(90.0))[0],
-			&glm::vec3(0.0, 0.0, 1.0),
-		);
 
 		let view = glm::look_at(
 			&glm::vec3(2.0,2.0,2.0),
@@ -1960,17 +1957,6 @@ pub mod vh
 
 		data.graphics_command_buffers[image_index] = cb;
 
-		let time = start.elapsed().as_secs_f32();
-
-		let model = glm::rotate(
-			&glm::identity(),
-			time * glm::radians(&glm::vec1(90.0))[0],
-			&glm::vec3(0.0, 0.0, 1.0),
-		);
-		let (_, model_bytes, _) = unsafe { model.as_slice().align_to::<u8>() };
-
-		let opacity = (0.5 * start.elapsed().as_secs_f32()).sin().abs();
-
 		let g_begin_info = vk::CommandBufferBeginInfo::builder();
 		unsafe { device.begin_command_buffer(cb, &g_begin_info)? };
 
@@ -2002,37 +1988,106 @@ pub mod vh
 
 		unsafe
 		{
-			device.cmd_begin_render_pass(cb, &info, vk::SubpassContents::INLINE);
-			device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, data.pipeline);
-			device.cmd_bind_vertex_buffers(cb, 0, &[data.vertex_buffer], &[0]);
-			device.cmd_bind_index_buffer(cb, data.index_buffer, 0, vk::IndexType::UINT32);
-			device.cmd_bind_descriptor_sets(
-				cb,
-				vk::PipelineBindPoint::GRAPHICS,
-				data.pipeline_layout,
-				0,
-				&[data.descriptor_sets[image_index]],
-				&[],
-			);
-			device.cmd_push_constants(
-				cb,
-				data.pipeline_layout,
-				vk::ShaderStageFlags::VERTEX,
-				0,
-				model_bytes,
-			);
-			device.cmd_push_constants(
-				cb,
-				data.pipeline_layout,
-				vk::ShaderStageFlags::FRAGMENT,
-				64,
-				&opacity.to_ne_bytes()[..],
-			);
-			device.cmd_draw_indexed(cb, data.indices.len() as u32, 1, 0, 0, 0);
+			device.cmd_begin_render_pass(cb, &info, vk::SubpassContents::SECONDARY_COMMAND_BUFFERS);
+
+			let secondary_command_buffers = (0..4)
+				.map(|i|
+					update_secondary_command_buffer(image_index, i, device, data, start)
+				)
+				.collect::<Result<Vec<_>, _>>()?;
+
+			device.cmd_execute_commands(cb, &secondary_command_buffers);
+
 			device.cmd_end_render_pass(cb);
 			device.end_command_buffer(cb)?;
 		}
 		Ok(())
+	}
+
+	unsafe fn update_secondary_command_buffer(
+		image_index: usize,
+		model_index: usize,
+		device: &ash::Device,
+		data: &mut Data,
+		start: &std::time::Instant
+		) -> Result<vk::CommandBuffer>
+	{
+		data.secondary_command_buffers.resize_with(image_index + 1, Vec::new);
+		let command_buffers = &mut data.secondary_command_buffers[image_index];
+		while model_index >= command_buffers.len()
+		{
+			let allocate_info = vk::CommandBufferAllocateInfo::builder()
+				.command_pool(data.graphics_command_pools[image_index])
+				.level(vk::CommandBufferLevel::SECONDARY)
+				.command_buffer_count(1);
+
+			let command_buffer = device.allocate_command_buffers(&allocate_info)?[0];
+
+			command_buffers.push(command_buffer);
+		}
+
+		let command_buffer = command_buffers[model_index];
+
+		let time = start.elapsed().as_secs_f32();
+
+		let y = (((model_index % 2) as f32) * 2.5) - 1.25;
+		let z = (((model_index / 2) as f32) * -2.0) + 1.0;
+
+		let model = glm::translate(
+			&glm::identity(),
+			&glm::vec3(0.0,y,z)
+		);
+
+		let model = glm::rotate(
+			&model,
+			time * glm::radians(&glm::vec1(90.0))[0],
+			&glm::vec3(0.0,0.0,1.0));
+
+		let (_, model_bytes, _) = model.as_slice().align_to::<u8>();
+
+		let opacity = (0.5 * (((model_index + 1) as f32 * 0.25) + time)).sin().abs();
+		let opacity_bytes = &opacity.to_ne_bytes();
+
+		let inheritence_info = vk::CommandBufferInheritanceInfo::builder()
+			.render_pass(data.render_pass)
+			.subpass(0)
+			.framebuffer(data.framebuffers[image_index]);
+
+		let info = vk::CommandBufferBeginInfo::builder()
+			.flags(vk::CommandBufferUsageFlags::RENDER_PASS_CONTINUE)
+			.inheritance_info(&inheritence_info);
+
+		device.begin_command_buffer(command_buffer, &info)?;
+
+		device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::GRAPHICS, data.pipeline);
+		device.cmd_bind_vertex_buffers(command_buffer, 0, &[data.vertex_buffer], &[0]);
+		device.cmd_bind_index_buffer(command_buffer, data.index_buffer, 0, vk::IndexType::UINT32);
+		device.cmd_bind_descriptor_sets(
+			command_buffer,
+			vk::PipelineBindPoint::GRAPHICS,
+			data.pipeline_layout,
+			0,
+			&[data.descriptor_sets[image_index]],
+			&[]);
+		device.cmd_push_constants(
+			command_buffer,
+			data.pipeline_layout,
+			vk::ShaderStageFlags::VERTEX,
+			0,
+			model_bytes,
+		);
+		device.cmd_push_constants(
+			command_buffer,
+			data.pipeline_layout,
+			vk::ShaderStageFlags::FRAGMENT,
+			64,
+			opacity_bytes,
+		);
+		device.cmd_draw_indexed(command_buffer, data.indices.len() as u32, 1, 0, 0, 0);
+
+		device.end_command_buffer(command_buffer)?;
+
+		Ok(command_buffer)
 	}
 
 	pub fn render(instance: &ash::Instance, device: &ash::Device, surface_loader: &ash::extensions::khr::Surface, window: &Window, data: &mut Data, start: &std::time::Instant) -> Result<()>
