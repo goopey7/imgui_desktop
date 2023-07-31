@@ -22,6 +22,7 @@ fn main() -> Result<()>
 	let start = Instant::now();
 
 	let mut data = Data::default();
+	data.resized = false;
 	let entry = unsafe { ash::Entry::load()? };
 	let instance = vh::create_instance(&entry, &window, VALIDATION_ENABLED, &mut data)?;
 	let surface = vh::create_surface(&entry, &instance, &window, &mut data)?;
@@ -66,6 +67,7 @@ fn main() -> Result<()>
 				else
 				{
 					minimized = false;
+					data.resized = true;
 				}
 			},
 			// Handle Input

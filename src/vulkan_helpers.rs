@@ -18,6 +18,7 @@ pub mod vh
 	#[derive(Default, Clone)]
 	pub struct Data
 	{
+		pub resized: bool,
 		frame: usize,
 		surface: vk::SurfaceKHR,
 		physical_device: vk::PhysicalDevice,
@@ -1937,8 +1938,9 @@ pub mod vh
 		{
 			let result = swapchain_loader.queue_present(data.presentation_queue, &present_info);
 			let changed = result == Err(vk::Result::SUBOPTIMAL_KHR) || result == Err(vk::Result::ERROR_OUT_OF_DATE_KHR);
-			if changed
+			if changed || data.resized
 			{
+				data.resized = false;
 				recreate_swapchain(instance, device, surface_loader, window, data)?;
 			}
 			else if let Err(e) = result
