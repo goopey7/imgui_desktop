@@ -1723,12 +1723,10 @@ pub mod vh
 
 	fn update_uniform_buffer(device: &ash::Device, image_index: usize, data: &Data, start: &std::time::Instant) -> Result<()>
 	{
-		let time = start.elapsed().as_secs_f32();
-
 		let view = glm::look_at(
-			&glm::vec3(2.0,2.0,2.0),
+			&glm::vec3(0.0,6.0,6.0),
 			&glm::vec3(0.0,0.0,0.0),
-			&glm::vec3(0.0,0.0,1.0),
+			&glm::vec3(0.0,1.0,0.0),
 		);
 
 		let mut proj = glm::perspective_rh_zo(
@@ -2031,12 +2029,17 @@ pub mod vh
 		let time = start.elapsed().as_secs_f32();
 
 		let y = (((model_index % 2) as f32) * 2.5) - 1.25;
-		let z = (((model_index / 2) as f32) * -2.0) + 1.0;
+		let x = (((model_index / 2) as f32) * -2.0) + 1.0;
 
 		let model = glm::translate(
 			&glm::identity(),
-			&glm::vec3(0.0,y,z)
+			&glm::vec3(x,y,0.0)
 		);
+
+		let model = glm::rotate(
+			&model,
+			glm::radians(&glm::vec1(-90.0))[0],
+			&glm::vec3(1.0,0.0,0.0));
 
 		let model = glm::rotate(
 			&model,
@@ -2045,7 +2048,7 @@ pub mod vh
 
 		let (_, model_bytes, _) = model.as_slice().align_to::<u8>();
 
-		let opacity = (0.5 * (((model_index + 1) as f32 * 0.25) + time)).sin().abs();
+		let opacity = (model_index + 1) as f32 * 0.25;
 		let opacity_bytes = &opacity.to_ne_bytes();
 
 		let inheritence_info = vk::CommandBufferInheritanceInfo::builder()
