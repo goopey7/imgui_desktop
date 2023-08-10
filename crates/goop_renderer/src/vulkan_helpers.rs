@@ -133,10 +133,10 @@ pub mod vh
 		}
 	}
 
-	pub fn create_instance(entry: &ash::Entry, window: &Window, enable_validation: bool, data: &mut Data) -> Result<ash::Instance>
+	pub fn create_instance(entry: &ash::Entry, window: &Window, enable_validation: bool, data: &mut Data, app_name: &str) -> Result<ash::Instance>
 	{
-		let engine_name = std::ffi::CString::new("goopEngine")?;
-		let app_name = std::ffi::CString::new("Crab Game")?;
+		let engine_name = std::ffi::CString::new("Goop Engine")?;
+		let app_name = std::ffi::CString::new(app_name)?;
 
 		let app_info = vk::ApplicationInfo::builder()
 			.application_name(&app_name)
@@ -698,8 +698,9 @@ pub mod vh
 
 	pub fn create_pipeline(device: &ash::Device, data: &mut Data) -> Result<()>
 	{
-		let vert = include_bytes!("../shaders/vert.spv");
-		let frag = include_bytes!("../shaders/frag.spv");
+		// TODO find a better way to handle loading shaders
+		let vert = include_bytes!("../../../shaders/vert.spv");
+		let frag = include_bytes!("../../../shaders/frag.spv");
 
 		let vert_sm = unsafe { create_shader_module(device, vert)? } ;
 		let frag_sm = unsafe { create_shader_module(device, frag)? } ;

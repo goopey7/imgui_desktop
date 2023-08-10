@@ -7,7 +7,8 @@ use winit::
 	event::{Event, WindowEvent}
 };
 use anyhow::Result;
-use crate::renderer::Renderer;
+
+use goop_renderer::renderer::Renderer;
 
 pub struct App
 {
@@ -25,7 +26,7 @@ impl App
 			.with_title(app_name)
 			.with_inner_size(LogicalSize::new(1024, 768))
 			.build(&event_loop)?;
-		let renderer = Renderer::init(&window)?;
+		let renderer = Renderer::init(&window, app_name)?;
 
 		Ok(Self
 		{

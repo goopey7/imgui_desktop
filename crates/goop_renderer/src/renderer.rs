@@ -16,11 +16,12 @@ pub struct Renderer
 
 impl Renderer
 {
-	pub fn init(window: &Window) -> Result<Self>
+	pub fn init(window: &Window, app_name: &str) -> Result<Self>
 	{
+		log::info!("Initializing Renderer........");
 		let mut data = Data::default();
 		let entry = unsafe { ash::Entry::load()? };
-		let instance = vh::create_instance(&entry, window, VALIDATION_ENABLED, &mut data)?;
+		let instance = vh::create_instance(&entry, window, VALIDATION_ENABLED, &mut data, app_name)?;
 		let surface = vh::create_surface(&entry, &instance, window, &mut data)?;
 		let device = vh::create_logical_device(&instance, &surface, &mut data)?;
 		vh::set_msaa_samples(&instance, &mut data)?;
@@ -45,6 +46,7 @@ impl Renderer
 		vh::create_command_buffers(&device, &mut data)?;
 		vh::create_sync_objects(&device, &mut data)?;
 
+		log::info!("Renderer Initialized Successfully");
 		Ok(Renderer
 		{
 			_entry: entry,

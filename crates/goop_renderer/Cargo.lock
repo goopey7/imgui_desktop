@@ -492,18 +492,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "goop"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "goop_renderer",
- "log",
- "pretty_env_logger",
- "raw-window-handle 0.5.2",
- "winit",
-]
-
-[[package]]
 name = "goop_renderer"
 version = "0.1.0"
 dependencies = [

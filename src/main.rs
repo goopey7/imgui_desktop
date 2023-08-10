@@ -1,8 +1,4 @@
-mod vulkan_helpers;
-mod renderer;
-mod app;
-use app::App;
-
+use goop::app::App;
 use anyhow::Result;
 
 fn main() -> Result<()>
