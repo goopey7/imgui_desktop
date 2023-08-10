@@ -2259,6 +2259,7 @@ pub mod vh
 			.for_each(|s| device.destroy_semaphore(*s, None));
 		device.destroy_command_pool(data.graphics_command_pool, None);
 		device.destroy_command_pool(data.transfer_command_pool, None);
+
 		device.destroy_device(None);
 		surface_loader.destroy_surface(data.surface, None);
 		if let (Some(du), Some(msg)) = (data.debug_utils.as_ref(), data.messenger.as_ref())
