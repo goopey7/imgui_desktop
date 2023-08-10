@@ -12,21 +12,19 @@ pub struct Renderer
 	device: ash::Device,
 	surface: ash::extensions::khr::Surface,
 	data: Data,
-	window: Window,
 }
 
 impl Renderer
 {
-	pub fn init(window: Window) -> Result<Self>
+	pub fn init(window: &Window) -> Result<Self>
 	{
 		let mut data = Data::default();
-		data.resized = false;
 		let entry = unsafe { ash::Entry::load()? };
-		let instance = vh::create_instance(&entry, &window, VALIDATION_ENABLED, &mut data)?;
-		let surface = vh::create_surface(&entry, &instance, &window, &mut data)?;
+		let instance = vh::create_instance(&entry, window, VALIDATION_ENABLED, &mut data)?;
+		let surface = vh::create_surface(&entry, &instance, window, &mut data)?;
 		let device = vh::create_logical_device(&instance, &surface, &mut data)?;
 		vh::set_msaa_samples(&instance, &mut data)?;
-		vh::create_swapchain(&instance, &device, &surface, &window, &mut data)?;
+		vh::create_swapchain(&instance, &device, &surface, window, &mut data)?;
 		vh::create_swapchain_image_views(&device, &mut data)?;
 		vh::create_render_pass(&instance, &device, &mut data)?;
 		vh::create_descriptor_set_layout(&device, &mut data)?;
@@ -54,17 +52,16 @@ impl Renderer
 			device,
 			surface,
 			data,
-			window,
 		})
 	}
 
-	pub fn render(&mut self, start: Instant)
+	pub fn render(&mut self, window: &Window, start: Instant)
 	{
 		vh::render(
 			&self.instance,
 			&self.device,
 			&self.surface,
-			&self.window,
+			&window,
 			&mut self.data,
 			&start
 		).unwrap();
@@ -85,7 +82,7 @@ impl Drop for Renderer
 		{
 			vh::destroy(&self.instance, &self.device, &self.surface, &self.data)
 		}
-		log::info!("Renderer Destroyed Successfully")
+		log::info!("Renderer Destroyed Successfully");
 	}
 }
 
