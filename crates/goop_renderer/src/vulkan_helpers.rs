@@ -40,7 +40,6 @@ pub mod vh
 		pub graphics_command_pool: vk::CommandPool,
 		transfer_command_pool: vk::CommandPool,
 		graphics_command_buffers: Vec<vk::CommandBuffer>,
-		secondary_command_buffers: Vec<Vec<vk::CommandBuffer>>, // multiple buffers per frame per model instance
 		in_flight_fences: Vec<vk::Fence>,
 		image_available_semaphores: Vec<vk::Semaphore>,
 		render_finished_semaphores: Vec<vk::Semaphore>,
@@ -1678,7 +1677,6 @@ pub mod vh
 			data.graphics_command_buffers.push(command_buffer);
 		}
 
-		data.secondary_command_buffers = vec![vec![]; data.swapchain_images.len()];
 		Ok(())
 
 	}
@@ -1930,69 +1928,14 @@ pub mod vh
 		Ok(())
 	}
 
-	#[cfg(not(feature = "goop_imgui"))]
-	fn update_command_buffer(device: &ash::Device, image_index: usize, data: &mut Data, start: &std::time::Instant) -> Result<()>
-	{
-		let cp = data.graphics_command_pools[image_index];
-		unsafe { device.reset_command_pool(cp, vk::CommandPoolResetFlags::empty())? };
-		let cb = data.graphics_command_buffers[image_index];
-
-		data.graphics_command_buffers[image_index] = cb;
-
-		let g_begin_info = vk::CommandBufferBeginInfo::builder();
-		unsafe { device.begin_command_buffer(cb, &g_begin_info)? };
-
-		let render_area = vk::Rect2D::builder()
-			.offset(vk::Offset2D::default())
-			.extent(data.swapchain_extent);
-
-		let color_clear_value = vk::ClearValue {
-			color: vk::ClearColorValue {
-				float32: [0.0,0.0,0.0,1.0],
-			}
-		};
-		
-		let depth_clear_value = vk::ClearValue {
-			depth_stencil: vk::ClearDepthStencilValue
-				{
-					depth: 1.0,
-					stencil: 0,
-				}
-			};
-		
-		let clear_values = &[color_clear_value, depth_clear_value];
-
-		let info = vk::RenderPassBeginInfo::builder()
-			.render_pass(data.render_pass)
-			.framebuffer(data.framebuffers[image_index])
-			.render_area(*render_area)
-			.clear_values(clear_values);
-
-		unsafe
-		{
-			device.cmd_begin_render_pass(cb, &info, vk::SubpassContents::SECONDARY_COMMAND_BUFFERS);
-
-			let secondary_command_buffers = (0..4)
-				.map(|i|
-					update_secondary_command_buffer(image_index, i, device, data, start)
-				)
-				.collect::<Result<Vec<_>, _>>()?;
-
-			device.cmd_execute_commands(cb, &secondary_command_buffers);
-
-			device.cmd_end_render_pass(cb);
-			device.end_command_buffer(cb)?;
-		}
-		Ok(())
-	}
-
-	#[cfg(feature = "goop_imgui")]
 	fn update_command_buffer(
 		device: &ash::Device,
 		image_index: usize,
 		data: &mut Data,
 		start: &std::time::Instant,
+		#[cfg(feature = "goop_imgui")]
 		renderer: &mut imgui_rs_vulkan_renderer::Renderer,
+		#[cfg(feature = "goop_imgui")]
 		draw_data: &imgui::DrawData,
 		) -> Result<()>
 	{
@@ -2071,6 +2014,7 @@ pub mod vh
 			);
 			device.cmd_draw_indexed(cb, data.indices.len() as u32, 1, 0, 0, 0);
 
+			#[cfg(feature = "goop_imgui")]
 			renderer.cmd_draw(cb, draw_data)?;
 
 			device.cmd_end_render_pass(cb);
@@ -2080,178 +2024,6 @@ pub mod vh
 		Ok(())
 	}
 
-	unsafe fn update_secondary_command_buffer(
-		image_index: usize,
-		model_index: usize,
-		device: &ash::Device,
-		data: &mut Data,
-		start: &std::time::Instant,
-		renderer: &mut imgui_rs_vulkan_renderer::Renderer,
-		draw_data: &imgui::DrawData
-		) -> Result<vk::CommandBuffer>
-	{
-		data.secondary_command_buffers.resize_with(image_index + 1, Vec::new);
-		let command_buffers = &mut data.secondary_command_buffers[image_index];
-		while model_index >= command_buffers.len()
-		{
-			let allocate_info = vk::CommandBufferAllocateInfo::builder()
-				.command_pool(data.graphics_command_pools[image_index])
-				.level(vk::CommandBufferLevel::SECONDARY)
-				.command_buffer_count(1);
-
-			let command_buffer = device.allocate_command_buffers(&allocate_info)?[0];
-
-			command_buffers.push(command_buffer);
-		}
-
-		let command_buffer = command_buffers[model_index];
-
-		let time = start.elapsed().as_secs_f32();
-
-		let y = (((model_index % 2) as f32) * 2.5) - 1.25;
-		let x = (((model_index / 2) as f32) * -2.0) + 1.0;
-
-		let model = glm::translate(
-			&glm::identity(),
-			&glm::vec3(x,y,0.0)
-		);
-
-		let model = glm::rotate(
-			&model,
-			glm::radians(&glm::vec1(-90.0))[0],
-			&glm::vec3(1.0,0.0,0.0));
-
-		let model = glm::rotate(
-			&model,
-			time * glm::radians(&glm::vec1(90.0))[0],
-			&glm::vec3(0.0,0.0,1.0));
-
-		let (_, model_bytes, _) = model.as_slice().align_to::<u8>();
-
-		let opacity = (model_index + 1) as f32 * 0.25;
-		let opacity_bytes = &opacity.to_ne_bytes();
-
-		let inheritence_info = vk::CommandBufferInheritanceInfo::builder()
-			.render_pass(data.render_pass)
-			.subpass(0)
-			.framebuffer(data.framebuffers[image_index]);
-
-		let info = vk::CommandBufferBeginInfo::builder()
-			.flags(vk::CommandBufferUsageFlags::RENDER_PASS_CONTINUE)
-			.inheritance_info(&inheritence_info);
-
-		device.begin_command_buffer(command_buffer, &info)?;
-
-		device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::GRAPHICS, data.pipeline);
-		device.cmd_bind_vertex_buffers(command_buffer, 0, &[data.vertex_buffer], &[0]);
-		device.cmd_bind_index_buffer(command_buffer, data.index_buffer, 0, vk::IndexType::UINT32);
-		device.cmd_bind_descriptor_sets(
-			command_buffer,
-			vk::PipelineBindPoint::GRAPHICS,
-			data.pipeline_layout,
-			0,
-			&[data.descriptor_sets[image_index]],
-			&[]);
-		device.cmd_push_constants(
-			command_buffer,
-			data.pipeline_layout,
-			vk::ShaderStageFlags::VERTEX,
-			0,
-			model_bytes,
-		);
-		device.cmd_push_constants(
-			command_buffer,
-			data.pipeline_layout,
-			vk::ShaderStageFlags::FRAGMENT,
-			64,
-			opacity_bytes,
-		);
-		device.cmd_draw_indexed(command_buffer, data.indices.len() as u32, 1, 0, 0, 0);
-		renderer.cmd_draw(command_buffer, draw_data)?;
-
-		device.end_command_buffer(command_buffer)?;
-
-		Ok(command_buffer)
-	}
-
-	#[cfg(not(feature = "goop_imgui"))]
-	pub fn render(instance: &ash::Instance, device: &ash::Device, surface_loader: &ash::extensions::khr::Surface, window: &Window, data: &mut Data, start: &std::time::Instant) -> Result<()>
-	{
-		let swapchain_loader = data.swapchain_loader.clone().unwrap();
-		let in_flight_fence = data.in_flight_fences[data.frame];
-
-		unsafe { device.wait_for_fences(&[in_flight_fence], true, u64::max_value())? };
-
-		let result = unsafe { swapchain_loader.acquire_next_image(
-			data.swapchain,
-			u64::max_value(),
-			data.image_available_semaphores[data.frame],
-			vk::Fence::null(),
-			)
-		};
-
-		let image_index = match result
-		{
-			Ok((image_index, _)) => image_index as usize,
-			Err(ash::vk::Result::ERROR_OUT_OF_DATE_KHR) => return recreate_swapchain(instance, device, surface_loader, window, data),
-			Err(e) => return Err(anyhow!(e)),
-		};
-
-		let image_in_flight = data.images_in_flight[image_index];
-
-		if image_in_flight != vk::Fence::null()
-		{
-			unsafe { device.wait_for_fences(&[image_in_flight], true, u64::max_value())? };
-		}
-
-		update_command_buffer(device, image_index, data, start)?;
-		update_uniform_buffer(device, image_index, data)?;
-
-		let wait_semaphores = &[data.image_available_semaphores[data.frame]];
-		let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
-		let command_buffers = &[data.graphics_command_buffers[image_index]];
-		let signal_semaphores = &[data.render_finished_semaphores[data.frame]];
-
-		let submit_info = vk::SubmitInfo::builder()
-			.wait_semaphores(wait_semaphores)
-			.wait_dst_stage_mask(wait_stages)
-			.command_buffers(command_buffers)
-			.signal_semaphores(signal_semaphores);
-
-		unsafe
-		{
-			device.reset_fences(&[in_flight_fence])?;
-			device.queue_submit(data.graphics_queue, &[*submit_info], in_flight_fence)?;
-		}
-
-		let swapchains = &[data.swapchain];
-		let image_indices = &[image_index as u32];
-		let present_info = vk::PresentInfoKHR::builder()
-			.wait_semaphores(signal_semaphores)
-			.swapchains(swapchains)
-			.image_indices(image_indices);
-
-		unsafe
-		{
-			let result = swapchain_loader.queue_present(data.presentation_queue, &present_info);
-			let changed = result == Err(vk::Result::SUBOPTIMAL_KHR) || result == Err(vk::Result::ERROR_OUT_OF_DATE_KHR);
-			if changed || data.resized
-			{
-				data.resized = false;
-				recreate_swapchain(instance, device, surface_loader, window, data)?;
-			}
-			else if let Err(e) = result
-			{
-				return Err(anyhow!(e));
-			}
-		}
-
-		data.frame = (data.frame + 1) % MAX_FRAMES_IN_FLIGHT;
-
-		Ok(())
-	}
-
-	#[cfg(feature = "goop_imgui")]
 	pub fn render(
 		instance: &ash::Instance,
 		device: &ash::Device,
@@ -2259,7 +2031,9 @@ pub mod vh
 		window: &Window,
 		data: &mut Data,
 		start: &std::time::Instant,
+		#[cfg(feature = "goop_imgui")]
 		renderer: &mut imgui_rs_vulkan_renderer::Renderer,
+		#[cfg(feature = "goop_imgui")]
 		draw_data: &imgui::DrawData,
 		) -> Result<()>
 	{
@@ -2290,7 +2064,16 @@ pub mod vh
 			unsafe { device.wait_for_fences(&[image_in_flight], true, u64::max_value())? };
 		}
 
-		update_command_buffer(device, image_index, data, start, renderer, &draw_data)?;
+		update_command_buffer(
+			device,
+			image_index,
+			data,
+			start,
+			#[cfg(feature = "goop_imgui")]
+			renderer,
+			#[cfg(feature = "goop_imgui")]
+			&draw_data,
+		)?;
 		update_uniform_buffer(device, image_index, data)?;
 
 		let wait_semaphores = &[data.image_available_semaphores[data.frame]];

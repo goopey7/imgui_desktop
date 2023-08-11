@@ -1,5 +1,4 @@
 use anyhow::Result;
-use imgui_rs_vulkan_renderer::Options;
 use std::time::Instant;
 use winit::window::Window;
 use crate::vulkan_helpers::vh::{Data, self};
@@ -8,6 +7,8 @@ use crate::vulkan_helpers::vh::{Data, self};
 use imgui::*;
 #[cfg(feature = "goop_imgui")]
 use imgui_winit_support::WinitPlatform;
+#[cfg(feature = "goop_imgui")]
+use imgui_rs_vulkan_renderer::Options;
 
 const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
 
@@ -25,9 +26,60 @@ pub struct Renderer
 
 impl Renderer
 {
+	#[cfg(not(feature = "goop_imgui"))]
+	pub fn init(window: &Window, app_name: &str) -> Result<Self>
+	{
+		let (entry, instance, surface, device, data) = Renderer::init_renderer(window, app_name)?;
+
+		Ok(
+			Self
+			{
+				_entry: entry,
+				instance,
+				surface,
+				device,
+				data,
+			}
+		)
+	}
+
+	#[cfg(feature = "goop_imgui")]
 	pub fn init(window: &Window, app_name: &str, imgui: &mut Context) -> Result<Self>
 	{
+		let (entry, instance, surface, device, data) = Renderer::init_renderer(window, app_name)?;
+
+		let renderer = imgui_rs_vulkan_renderer::Renderer::with_default_allocator(
+			&instance,
+			data.physical_device,
+			device.clone(),
+			data.graphics_queue,
+			data.graphics_command_pool,
+			data.render_pass,
+			imgui,
+			Some(Options
+				{
+					in_flight_frames: 3,
+					enable_depth_test: false,
+					enable_depth_write: false,
+				}
+			),
+		)?;
+
+		Ok(Renderer
+		{
+			_entry: entry,
+			instance,
+			device,
+			surface,
+			data,
+			renderer,
+		})
+	}
+
+	fn init_renderer(window: &Window, app_name: &str) -> Result<(ash::Entry, ash::Instance, ash::extensions::khr::Surface, ash::Device, Data)>
+	{
 		log::info!("Initializing Renderer........");
+
 		let mut data = Data::default();
 		let entry = unsafe { ash::Entry::load()? };
 		let instance = vh::create_instance(&entry, window, VALIDATION_ENABLED, &mut data, app_name)?;
@@ -56,35 +108,7 @@ impl Renderer
 		vh::create_sync_objects(&device, &mut data)?;
 
 		log::info!("Renderer Initialized Successfully");
-
-		#[cfg(feature = "goop_imgui")]
-		let renderer = imgui_rs_vulkan_renderer::Renderer::with_default_allocator(
-			&instance,
-			data.physical_device,
-			device.clone(),
-			data.graphics_queue,
-			data.graphics_command_pool,
-			data.render_pass,
-			imgui,
-			Some(Options
-				{
-					in_flight_frames: 3,
-					enable_depth_test: false,
-					enable_depth_write: false,
-				}
-			),
-		)?;
-
-		Ok(Renderer
-		{
-			_entry: entry,
-			instance,
-			device,
-			surface,
-			data,
-			#[cfg(feature = "goop_imgui")]
-			renderer,
-		})
+		Ok((entry, instance, surface, device, data))
 	}
 
 	#[cfg(not(feature = "goop_imgui"))]
