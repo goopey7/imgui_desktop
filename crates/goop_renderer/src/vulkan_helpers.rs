@@ -628,10 +628,12 @@ pub mod vh
 
 	impl Vertex
 	{
+		/*
 		fn new(pos: glm::Vec3, color: glm::Vec3, tex_coord: glm::Vec2) -> Self
 		{
 			Self { pos, color, tex_coord, }
 		}
+		*/
 
 		fn binding_description() -> vk::VertexInputBindingDescription
 		{
@@ -899,7 +901,7 @@ pub mod vh
 			.memory_type_index(get_memory_type_index(
 					instance,
 					data,
-					vk::MemoryPropertyFlags::DEVICE_LOCAL,
+					properties,
 					requirements,
 					)?);
 		
@@ -913,7 +915,6 @@ pub mod vh
 		device: &ash::Device,
 		data: &Data,
 		image: vk::Image,
-		format: vk::Format,
 		old_layout: vk::ImageLayout,
 		new_layout: vk::ImageLayout,
 		mip_levels: u32,
@@ -1247,7 +1248,6 @@ pub mod vh
 				device,
 				data,
 				data.texture_image,
-				vk::Format::R8G8B8A8_SRGB,
 				vk::ImageLayout::UNDEFINED,
 				vk::ImageLayout::TRANSFER_DST_OPTIMAL,
 				data.mip_levels,
@@ -1722,7 +1722,7 @@ pub mod vh
 		Ok(())
 	}
 
-	fn update_uniform_buffer(device: &ash::Device, image_index: usize, data: &Data, start: &std::time::Instant) -> Result<()>
+	fn update_uniform_buffer(device: &ash::Device, image_index: usize, data: &Data) -> Result<()>
 	{
 		let view = glm::look_at(
 			&glm::vec3(0.0,6.0,6.0),
@@ -2124,7 +2124,7 @@ pub mod vh
 		}
 
 		update_command_buffer(device, image_index, data, start)?;
-		update_uniform_buffer(device, image_index, data, start)?;
+		update_uniform_buffer(device, image_index, data)?;
 
 		let wait_semaphores = &[data.image_available_semaphores[data.frame]];
 		let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];

@@ -9,7 +9,6 @@ use winit::
 use anyhow::Result;
 
 use goop_renderer::renderer::Renderer;
-
 pub struct App
 {
 	renderer: Renderer,
@@ -67,9 +66,11 @@ impl App
 					}
 				},
 				// Handle Input
+				/*
 				Event::WindowEvent {event: WindowEvent::KeyboardInput { input, .. }, .. } =>
 				{
 				},
+				*/
 				// Destroy App (renderer gets dropped automatically)
 				Event::WindowEvent { event: WindowEvent::CloseRequested, .. } =>
 				{
