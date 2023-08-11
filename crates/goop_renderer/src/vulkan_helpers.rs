@@ -69,8 +69,6 @@ pub mod vh
 		color_image_view: vk::ImageView,
 		debug_utils: Option<ash::extensions::ext::DebugUtils>,
 		messenger: Option<vk::DebugUtilsMessengerEXT>,
-		#[cfg(feature = "goop_imgui")]
-		imgui_command_buffers: Vec<vk::CommandBuffer>,
 	}
 
 	#[derive(Copy, Clone, Debug)]
@@ -1678,9 +1676,6 @@ pub mod vh
 
 			let command_buffer = unsafe { device.allocate_command_buffers(&allocate_info) }?[0];
 			data.graphics_command_buffers.push(command_buffer);
-
-			let icb = unsafe { device.allocate_command_buffers(&allocate_info) }?[0];
-			data.imgui_command_buffers.push(icb);
 		}
 
 		data.secondary_command_buffers = vec![vec![]; data.swapchain_images.len()];
@@ -1711,9 +1706,9 @@ pub mod vh
 	fn update_uniform_buffer(device: &ash::Device, image_index: usize, data: &Data) -> Result<()>
 	{
 		let view = glm::look_at(
-			&glm::vec3(0.0,6.0,6.0),
+			&glm::vec3(2.0,2.0,2.0),
 			&glm::vec3(0.0,0.0,0.0),
-			&glm::vec3(0.0,1.0,0.0),
+			&glm::vec3(0.0,0.0,1.0),
 		);
 
 		let mut proj = glm::perspective_rh_zo(
@@ -2004,7 +1999,17 @@ pub mod vh
 		let cp = data.graphics_command_pools[image_index];
 		unsafe { device.reset_command_pool(cp, vk::CommandPoolResetFlags::empty())? };
 		let cb = data.graphics_command_buffers[image_index];
-		let icb = data.imgui_command_buffers[image_index];
+
+		let time = start.elapsed().as_secs_f32();
+
+		let model = glm::rotate(
+			&glm::identity(),
+			time * glm::radians(&glm::vec1(90.0))[0],
+			&glm::vec3(0.0, 0.0, 1.0),
+		);
+		let (_, model_bytes, _) = unsafe { model.as_slice().align_to::<u8>() };
+
+		let opacity = (0.5 * start.elapsed().as_secs_f32()).sin().abs();
 
 		let g_begin_info = vk::CommandBufferBeginInfo::builder();
 		unsafe { device.begin_command_buffer(cb, &g_begin_info)? };
@@ -2037,42 +2042,41 @@ pub mod vh
 
 		unsafe
 		{
-			device.cmd_begin_render_pass(cb, &info, vk::SubpassContents::SECONDARY_COMMAND_BUFFERS);
+			device.cmd_begin_render_pass(cb, &info, vk::SubpassContents::INLINE);
 
-			let secondary_command_buffers = (0..4)
-				.map(|i|
-					update_secondary_command_buffer(image_index, i, device, data, start)
-				)
-				.collect::<Result<Vec<_>, _>>()?;
+						device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, data.pipeline);
+			device.cmd_bind_vertex_buffers(cb, 0, &[data.vertex_buffer], &[0]);
+			device.cmd_bind_index_buffer(cb, data.index_buffer, 0, vk::IndexType::UINT32);
+			device.cmd_bind_descriptor_sets(
+				cb,
+				vk::PipelineBindPoint::GRAPHICS,
+				data.pipeline_layout,
+				0,
+				&[data.descriptor_sets[image_index]],
+				&[],
+			);
+			device.cmd_push_constants(
+				cb,
+				data.pipeline_layout,
+				vk::ShaderStageFlags::VERTEX,
+				0,
+				model_bytes,
+			);
+			device.cmd_push_constants(
+				cb,
+				data.pipeline_layout,
+				vk::ShaderStageFlags::FRAGMENT,
+				64,
+				&opacity.to_ne_bytes()[..],
+			);
+			device.cmd_draw_indexed(cb, data.indices.len() as u32, 1, 0, 0, 0);
 
-			device.cmd_execute_commands(cb, &secondary_command_buffers);
+			renderer.cmd_draw(cb, draw_data)?;
 
 			device.cmd_end_render_pass(cb);
 			device.end_command_buffer(cb)?;
 		}
 
-		let color_clear_value = vk::ClearValue {
-			color: vk::ClearColorValue {
-				float32: [0.0,0.0,0.0,0.0],
-			}
-		};
-		let clear_values = &[color_clear_value, depth_clear_value];
-
-		let info = vk::RenderPassBeginInfo::builder()
-			.render_pass(data.render_pass)
-			.framebuffer(data.framebuffers[image_index])
-			.render_area(*render_area)
-			.clear_values(clear_values);
-		let imgui_begin_info = vk::CommandBufferBeginInfo::builder();
-
-		unsafe 
-		{
-			device.begin_command_buffer(icb, &imgui_begin_info)?;
-			device.cmd_begin_render_pass(icb, &info, vk::SubpassContents::INLINE);
-			renderer.cmd_draw(icb, draw_data)?;
-			device.cmd_end_render_pass(icb);
-			device.end_command_buffer(icb)?;
-		}
 		Ok(())
 	}
 
@@ -2081,7 +2085,9 @@ pub mod vh
 		model_index: usize,
 		device: &ash::Device,
 		data: &mut Data,
-		start: &std::time::Instant
+		start: &std::time::Instant,
+		renderer: &mut imgui_rs_vulkan_renderer::Renderer,
+		draw_data: &imgui::DrawData
 		) -> Result<vk::CommandBuffer>
 	{
 		data.secondary_command_buffers.resize_with(image_index + 1, Vec::new);
@@ -2161,6 +2167,7 @@ pub mod vh
 			opacity_bytes,
 		);
 		device.cmd_draw_indexed(command_buffer, data.indices.len() as u32, 1, 0, 0, 0);
+		renderer.cmd_draw(command_buffer, draw_data)?;
 
 		device.end_command_buffer(command_buffer)?;
 
@@ -2288,7 +2295,7 @@ pub mod vh
 
 		let wait_semaphores = &[data.image_available_semaphores[data.frame]];
 		let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
-		let command_buffers = &[data.graphics_command_buffers[image_index], data.imgui_command_buffers[image_index]];
+		let command_buffers = &[data.graphics_command_buffers[image_index]];
 		let signal_semaphores = &[data.render_finished_semaphores[data.frame]];
 
 		let submit_info = vk::SubmitInfo::builder()
