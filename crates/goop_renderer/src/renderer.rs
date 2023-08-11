@@ -21,7 +21,7 @@ pub struct Renderer
 	data: Data,
 
 	#[cfg(feature = "goop_imgui")]
-    pub renderer: imgui_rs_vulkan_renderer::Renderer,
+    pub imgui_renderer: imgui_rs_vulkan_renderer::Renderer,
 }
 
 impl Renderer
@@ -48,7 +48,7 @@ impl Renderer
 	{
 		let (entry, instance, surface, device, data) = Renderer::init_renderer(window, app_name)?;
 
-		let renderer = imgui_rs_vulkan_renderer::Renderer::with_default_allocator(
+		let imgui_renderer = imgui_rs_vulkan_renderer::Renderer::with_default_allocator(
 			&instance,
 			data.physical_device,
 			device.clone(),
@@ -72,7 +72,7 @@ impl Renderer
 			device,
 			surface,
 			data,
-			renderer,
+			imgui_renderer,
 		})
 	}
 
@@ -98,14 +98,15 @@ impl Renderer
 		vh::create_texture_image(&instance, &device, &mut data)?;
 		vh::create_texture_image_views(&device, &mut data)?;
 		vh::create_texture_sampler(&device, &mut data)?;
-		vh::load_model(&mut data)?;
-		vh::create_vertex_buffer(&instance, &device, &mut data)?;
-		vh::create_index_buffer(&instance, &device, &mut data)?;
 		vh::create_uniform_buffers(&instance, &device, &mut data)?;
 		vh::create_descriptor_pool(&device, &mut data)?;
 		vh::create_descriptor_sets(&device, &mut data)?;
 		vh::create_command_buffers(&device, &mut data)?;
 		vh::create_sync_objects(&device, &mut data)?;
+
+		vh::load_model(&mut data)?;
+		vh::create_vertex_buffer(&instance, &device, &mut data)?;
+		vh::create_index_buffer(&instance, &device, &mut data)?;
 
 		log::info!("Renderer Initialized Successfully");
 		Ok((entry, instance, surface, device, data))
@@ -132,7 +133,15 @@ impl Renderer
 			.expect("Failed to prepare frame");
 
 		let ui = imgui.frame();
-		ui.show_demo_window(&mut true);
+
+		// TODO CALL ALL ENTITY RENDER FUNCTIONS HERE
+
+		ui.main_menu_bar(||
+		{
+			ui.text("Goop");
+		}
+		);
+
 		platform.prepare_render(&ui, &window);
 		let draw_data = imgui.render();
 
@@ -143,11 +152,10 @@ impl Renderer
 			&window,
 			&mut self.data,
 			&start,
-			&mut self.renderer,
+			&mut self.imgui_renderer,
 			&draw_data,
 		).unwrap();
 	}
-
 
 	pub fn resize(&mut self)
 	{
@@ -159,7 +167,7 @@ impl Drop for Renderer
 {
 	fn drop(&mut self)
 	{
-		log::info!("Destroying Renderer........");
+		log::info!("Destroying Renderer");
 		unsafe
 		{
 			return vh::destroy(&self.instance, &self.device, &self.surface, &self.data);
