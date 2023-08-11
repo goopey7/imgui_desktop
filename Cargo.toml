@@ -14,4 +14,6 @@ pretty_env_logger = "0.5.0"
 raw-window-handle = "0.5.2"
 winit = "0.27"
 
-goop_renderer = { path = "crates/goop_renderer" }
+goop_renderer = { path = "crates/goop_renderer", features = ["goop_imgui"]}
+imgui = "0.11.0"
+imgui-winit-support = "0.11.0"

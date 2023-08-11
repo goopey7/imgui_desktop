@@ -1,4 +1,6 @@
 use std::time::Instant;
+use imgui::Context;
+use imgui_winit_support::WinitPlatform;
 use winit::
 {
 	event_loop::{EventLoop, ControlFlow},
@@ -14,6 +16,8 @@ pub struct App
 	renderer: Renderer,
 	event_loop: EventLoop<()>,
 	window: Window,
+	imgui: Context,
+	platform: WinitPlatform,
 }
 
 impl App
@@ -25,13 +29,20 @@ impl App
 			.with_title(app_name)
 			.with_inner_size(LogicalSize::new(1024, 768))
 			.build(&event_loop)?;
-		let renderer = Renderer::init(&window, app_name)?;
+
+		let mut imgui = Context::create();
+		let mut platform = WinitPlatform::init(&mut imgui);
+		platform.attach_window(imgui.io_mut(), &window, imgui_winit_support::HiDpiMode::Rounded);
+
+		let renderer = Renderer::init(&window, app_name, &mut imgui)?;
 
 		Ok(Self
 		{
 			renderer,
 			event_loop,
 			window,
+			imgui,
+			platform,
 		})
 	}
 
@@ -42,15 +53,26 @@ impl App
 		let mut destroying = false;
 		let mut minimized = false;
 
+		let mut last_frame = Instant::now();
+
 		self.event_loop.run(move |event,_,control_flow|
 		{
 			*control_flow = ControlFlow::Poll;
+			self.platform.handle_event(self.imgui.io_mut(), &self.window, &event);
 			match event
 			{
+				// New Frame
+				Event::NewEvents(_) =>
+				{
+					let now = Instant::now();
+                    self.imgui.io_mut().update_delta_time(now - last_frame);
+                    last_frame = now;
+
+				}
 				// Render a frame if our Vulkan app is not being destroyed.
 				Event::MainEventsCleared if !destroying && !minimized =>
 				{
-					self.renderer.render(&self.window, start);
+					self.renderer.render(&self.window, start, &mut self.imgui, &mut self.platform);
 				},
 				// Check for resize
 				Event::WindowEvent {event: WindowEvent::Resized(size), ..} =>

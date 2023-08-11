@@ -1,7 +1,13 @@
 use anyhow::Result;
+use imgui_rs_vulkan_renderer::Options;
 use std::time::Instant;
 use winit::window::Window;
 use crate::vulkan_helpers::vh::{Data, self};
+
+#[cfg(feature = "goop_imgui")]
+use imgui::*;
+#[cfg(feature = "goop_imgui")]
+use imgui_winit_support::WinitPlatform;
 
 const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
 
@@ -12,11 +18,14 @@ pub struct Renderer
 	device: ash::Device,
 	surface: ash::extensions::khr::Surface,
 	data: Data,
+
+	#[cfg(feature = "goop_imgui")]
+    pub renderer: imgui_rs_vulkan_renderer::Renderer,
 }
 
 impl Renderer
 {
-	pub fn init(window: &Window, app_name: &str) -> Result<Self>
+	pub fn init(window: &Window, app_name: &str, imgui: &mut Context) -> Result<Self>
 	{
 		log::info!("Initializing Renderer........");
 		let mut data = Data::default();
@@ -47,6 +56,25 @@ impl Renderer
 		vh::create_sync_objects(&device, &mut data)?;
 
 		log::info!("Renderer Initialized Successfully");
+
+		#[cfg(feature = "goop_imgui")]
+		let renderer = imgui_rs_vulkan_renderer::Renderer::with_default_allocator(
+			&instance,
+			data.physical_device,
+			device.clone(),
+			data.graphics_queue,
+			data.graphics_command_pool,
+			data.render_pass,
+			imgui,
+			Some(Options
+				{
+					in_flight_frames: 3,
+					enable_depth_test: false,
+					enable_depth_write: false,
+				}
+			),
+		)?;
+
 		Ok(Renderer
 		{
 			_entry: entry,
@@ -54,9 +82,12 @@ impl Renderer
 			device,
 			surface,
 			data,
+			#[cfg(feature = "goop_imgui")]
+			renderer,
 		})
 	}
 
+	#[cfg(not(feature = "goop_imgui"))]
 	pub fn render(&mut self, window: &Window, start: Instant)
 	{
 		vh::render(
@@ -68,6 +99,31 @@ impl Renderer
 			&start
 		).unwrap();
 	}
+
+	#[cfg(feature = "goop_imgui")]
+	pub fn render(&mut self, window: &Window, start: Instant, imgui: &mut Context, platform: &mut WinitPlatform)
+	{
+		platform
+			.prepare_frame(imgui.io_mut(), &window)
+			.expect("Failed to prepare frame");
+
+		let ui = imgui.frame();
+		ui.show_demo_window(&mut true);
+		platform.prepare_render(&ui, &window);
+		let draw_data = imgui.render();
+
+		vh::render(
+			&self.instance,
+			&self.device,
+			&self.surface,
+			&window,
+			&mut self.data,
+			&start,
+			&mut self.renderer,
+			&draw_data,
+		).unwrap();
+	}
+
 
 	pub fn resize(&mut self)
 	{
@@ -82,9 +138,8 @@ impl Drop for Renderer
 		log::info!("Destroying Renderer........");
 		unsafe
 		{
-			vh::destroy(&self.instance, &self.device, &self.surface, &self.data)
+			return vh::destroy(&self.instance, &self.device, &self.surface, &self.data);
 		}
-		log::info!("Renderer Destroyed Successfully");
 	}
 }
 

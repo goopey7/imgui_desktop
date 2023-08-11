@@ -21,9 +21,9 @@ pub mod vh
 		pub resized: bool,
 		frame: usize,
 		surface: vk::SurfaceKHR,
-		physical_device: vk::PhysicalDevice,
+		pub physical_device: vk::PhysicalDevice,
 		msaa_samples: vk::SampleCountFlags,
-		graphics_queue: vk::Queue,
+		pub graphics_queue: vk::Queue,
 		transfer_queue: vk::Queue,
 		presentation_queue: vk::Queue,
 		swapchain_loader: Option<ash::extensions::khr::Swapchain>,
@@ -32,12 +32,12 @@ pub mod vh
 		swapchain_format: vk::Format,
 		swapchain_extent: vk::Extent2D,
 		swapchain_image_views: Vec<vk::ImageView>,
-		render_pass: vk::RenderPass,
+		pub render_pass: vk::RenderPass,
 		framebuffers: Vec<vk::Framebuffer>,
 		pipeline_layout: vk::PipelineLayout,
 		pipeline: vk::Pipeline,
 		graphics_command_pools: Vec<vk::CommandPool>,
-		graphics_command_pool: vk::CommandPool,
+		pub graphics_command_pool: vk::CommandPool,
 		transfer_command_pool: vk::CommandPool,
 		graphics_command_buffers: Vec<vk::CommandBuffer>,
 		secondary_command_buffers: Vec<Vec<vk::CommandBuffer>>, // multiple buffers per frame per model instance
@@ -69,6 +69,8 @@ pub mod vh
 		color_image_view: vk::ImageView,
 		debug_utils: Option<ash::extensions::ext::DebugUtils>,
 		messenger: Option<vk::DebugUtilsMessengerEXT>,
+		#[cfg(feature = "goop_imgui")]
+		imgui_command_buffers: Vec<vk::CommandBuffer>,
 	}
 
 	#[derive(Copy, Clone, Debug)]
@@ -510,8 +512,7 @@ pub mod vh
 			.stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
 			.stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
 			.initial_layout(vk::ImageLayout::UNDEFINED)
-			.samples(data.msaa_samples)
-			.final_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+			.final_layout(vk::ImageLayout::PRESENT_SRC_KHR);
 
 		let color_attachment_ref = vk::AttachmentReference::builder()
 			.attachment(0)
@@ -521,7 +522,7 @@ pub mod vh
 
 		let depth_stencil_attachment = vk::AttachmentDescription::builder()
 			.format(unsafe { get_depth_format(instance, data)? })
-			.samples(data.msaa_samples)
+			.samples(vk::SampleCountFlags::TYPE_1)
 			.load_op(vk::AttachmentLoadOp::CLEAR)
 			.store_op(vk::AttachmentStoreOp::DONT_CARE)
 			.stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
@@ -533,26 +534,9 @@ pub mod vh
 			.attachment(1)
 			.layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
-		let resolve_attachment = vk::AttachmentDescription::builder()
-			.format(data.swapchain_format)
-			.samples(vk::SampleCountFlags::TYPE_1)
-			.load_op(vk::AttachmentLoadOp::DONT_CARE)
-			.store_op(vk::AttachmentStoreOp::STORE)
-			.stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
-			.stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
-			.initial_layout(vk::ImageLayout::UNDEFINED)
-			.final_layout(vk::ImageLayout::PRESENT_SRC_KHR);
-
-		let resolve_attachment_ref = vk::AttachmentReference::builder()
-			.attachment(2)
-			.layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
-
-		let resolve_attachments = &[*resolve_attachment_ref];
-
 		let subpass = vk::SubpassDescription::builder()
 			.pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
 			.depth_stencil_attachment(&depth_stencil_attachment_ref)
-			.resolve_attachments(resolve_attachments)
 			.color_attachments(color_attachments);
 
 		let dependency = vk::SubpassDependency::builder()
@@ -570,7 +554,7 @@ pub mod vh
 				| vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE
 				);
 
-		let attachments = &[*color_attachment, *depth_stencil_attachment, *resolve_attachment];
+		let attachments = &[*color_attachment, *depth_stencil_attachment];
 		let subpasses = &[*subpass];
 		let dependencies = &[*dependency];
 
@@ -590,7 +574,7 @@ pub mod vh
 			.iter()
 			.map(|image_view|
 				{
-					let attachments = &[data.color_image_view, data.depth_image_view, *image_view];
+					let attachments = &[*image_view, data.depth_image_view];
 					let info = vk::FramebufferCreateInfo::builder()
 						.render_pass(data.render_pass)
 						.attachments(attachments)
@@ -1694,10 +1678,12 @@ pub mod vh
 
 			let command_buffer = unsafe { device.allocate_command_buffers(&allocate_info) }?[0];
 			data.graphics_command_buffers.push(command_buffer);
+
+			let icb = unsafe { device.allocate_command_buffers(&allocate_info) }?[0];
+			data.imgui_command_buffers.push(icb);
 		}
 
 		data.secondary_command_buffers = vec![vec![]; data.swapchain_images.len()];
-
 		Ok(())
 
 	}
@@ -1895,6 +1881,7 @@ pub mod vh
 		data: &Data,
 		) -> vk::SampleCountFlags
 	{
+		return vk::SampleCountFlags::TYPE_1;
 		let properties = unsafe { instance.get_physical_device_properties(data.physical_device) };
 		let counts = properties.limits.framebuffer_color_sample_counts
 			& properties.limits.framebuffer_depth_sample_counts;
@@ -1948,6 +1935,7 @@ pub mod vh
 		Ok(())
 	}
 
+	#[cfg(not(feature = "goop_imgui"))]
 	fn update_command_buffer(device: &ash::Device, image_index: usize, data: &mut Data, start: &std::time::Instant) -> Result<()>
 	{
 		let cp = data.graphics_command_pools[image_index];
@@ -1999,6 +1987,91 @@ pub mod vh
 
 			device.cmd_end_render_pass(cb);
 			device.end_command_buffer(cb)?;
+		}
+		Ok(())
+	}
+
+	#[cfg(feature = "goop_imgui")]
+	fn update_command_buffer(
+		device: &ash::Device,
+		image_index: usize,
+		data: &mut Data,
+		start: &std::time::Instant,
+		renderer: &mut imgui_rs_vulkan_renderer::Renderer,
+		draw_data: &imgui::DrawData,
+		) -> Result<()>
+	{
+		let cp = data.graphics_command_pools[image_index];
+		unsafe { device.reset_command_pool(cp, vk::CommandPoolResetFlags::empty())? };
+		let cb = data.graphics_command_buffers[image_index];
+		let icb = data.imgui_command_buffers[image_index];
+
+		let g_begin_info = vk::CommandBufferBeginInfo::builder();
+		unsafe { device.begin_command_buffer(cb, &g_begin_info)? };
+
+		let render_area = vk::Rect2D::builder()
+			.offset(vk::Offset2D::default())
+			.extent(data.swapchain_extent);
+
+		let color_clear_value = vk::ClearValue {
+			color: vk::ClearColorValue {
+				float32: [0.0,0.0,0.0,1.0],
+			}
+		};
+		
+		let depth_clear_value = vk::ClearValue {
+			depth_stencil: vk::ClearDepthStencilValue
+				{
+					depth: 1.0,
+					stencil: 0,
+				}
+			};
+		
+		let clear_values = &[color_clear_value, depth_clear_value];
+
+		let info = vk::RenderPassBeginInfo::builder()
+			.render_pass(data.render_pass)
+			.framebuffer(data.framebuffers[image_index])
+			.render_area(*render_area)
+			.clear_values(clear_values);
+
+		unsafe
+		{
+			device.cmd_begin_render_pass(cb, &info, vk::SubpassContents::SECONDARY_COMMAND_BUFFERS);
+
+			let secondary_command_buffers = (0..4)
+				.map(|i|
+					update_secondary_command_buffer(image_index, i, device, data, start)
+				)
+				.collect::<Result<Vec<_>, _>>()?;
+
+			device.cmd_execute_commands(cb, &secondary_command_buffers);
+
+			device.cmd_end_render_pass(cb);
+			device.end_command_buffer(cb)?;
+		}
+
+		let color_clear_value = vk::ClearValue {
+			color: vk::ClearColorValue {
+				float32: [0.0,0.0,0.0,0.0],
+			}
+		};
+		let clear_values = &[color_clear_value, depth_clear_value];
+
+		let info = vk::RenderPassBeginInfo::builder()
+			.render_pass(data.render_pass)
+			.framebuffer(data.framebuffers[image_index])
+			.render_area(*render_area)
+			.clear_values(clear_values);
+		let imgui_begin_info = vk::CommandBufferBeginInfo::builder();
+
+		unsafe 
+		{
+			device.begin_command_buffer(icb, &imgui_begin_info)?;
+			device.cmd_begin_render_pass(icb, &info, vk::SubpassContents::INLINE);
+			renderer.cmd_draw(icb, draw_data)?;
+			device.cmd_end_render_pass(icb);
+			device.end_command_buffer(icb)?;
 		}
 		Ok(())
 	}
@@ -2094,6 +2167,7 @@ pub mod vh
 		Ok(command_buffer)
 	}
 
+	#[cfg(not(feature = "goop_imgui"))]
 	pub fn render(instance: &ash::Instance, device: &ash::Device, surface_loader: &ash::extensions::khr::Surface, window: &Window, data: &mut Data, start: &std::time::Instant) -> Result<()>
 	{
 		let swapchain_loader = data.swapchain_loader.clone().unwrap();
@@ -2129,6 +2203,92 @@ pub mod vh
 		let wait_semaphores = &[data.image_available_semaphores[data.frame]];
 		let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
 		let command_buffers = &[data.graphics_command_buffers[image_index]];
+		let signal_semaphores = &[data.render_finished_semaphores[data.frame]];
+
+		let submit_info = vk::SubmitInfo::builder()
+			.wait_semaphores(wait_semaphores)
+			.wait_dst_stage_mask(wait_stages)
+			.command_buffers(command_buffers)
+			.signal_semaphores(signal_semaphores);
+
+		unsafe
+		{
+			device.reset_fences(&[in_flight_fence])?;
+			device.queue_submit(data.graphics_queue, &[*submit_info], in_flight_fence)?;
+		}
+
+		let swapchains = &[data.swapchain];
+		let image_indices = &[image_index as u32];
+		let present_info = vk::PresentInfoKHR::builder()
+			.wait_semaphores(signal_semaphores)
+			.swapchains(swapchains)
+			.image_indices(image_indices);
+
+		unsafe
+		{
+			let result = swapchain_loader.queue_present(data.presentation_queue, &present_info);
+			let changed = result == Err(vk::Result::SUBOPTIMAL_KHR) || result == Err(vk::Result::ERROR_OUT_OF_DATE_KHR);
+			if changed || data.resized
+			{
+				data.resized = false;
+				recreate_swapchain(instance, device, surface_loader, window, data)?;
+			}
+			else if let Err(e) = result
+			{
+				return Err(anyhow!(e));
+			}
+		}
+
+		data.frame = (data.frame + 1) % MAX_FRAMES_IN_FLIGHT;
+
+		Ok(())
+	}
+
+	#[cfg(feature = "goop_imgui")]
+	pub fn render(
+		instance: &ash::Instance,
+		device: &ash::Device,
+		surface_loader: &ash::extensions::khr::Surface,
+		window: &Window,
+		data: &mut Data,
+		start: &std::time::Instant,
+		renderer: &mut imgui_rs_vulkan_renderer::Renderer,
+		draw_data: &imgui::DrawData,
+		) -> Result<()>
+	{
+		let swapchain_loader = data.swapchain_loader.clone().unwrap();
+		let in_flight_fence = data.in_flight_fences[data.frame];
+
+		unsafe { device.wait_for_fences(&[in_flight_fence], true, u64::max_value())? };
+
+		let result = unsafe { swapchain_loader.acquire_next_image(
+			data.swapchain,
+			u64::max_value(),
+			data.image_available_semaphores[data.frame],
+			vk::Fence::null(),
+			)
+		};
+
+		let image_index = match result
+		{
+			Ok((image_index, _)) => image_index as usize,
+			Err(ash::vk::Result::ERROR_OUT_OF_DATE_KHR) => return recreate_swapchain(instance, device, surface_loader, window, data),
+			Err(e) => return Err(anyhow!(e)),
+		};
+
+		let image_in_flight = data.images_in_flight[image_index];
+
+		if image_in_flight != vk::Fence::null()
+		{
+			unsafe { device.wait_for_fences(&[image_in_flight], true, u64::max_value())? };
+		}
+
+		update_command_buffer(device, image_index, data, start, renderer, &draw_data)?;
+		update_uniform_buffer(device, image_index, data)?;
+
+		let wait_semaphores = &[data.image_available_semaphores[data.frame]];
+		let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
+		let command_buffers = &[data.graphics_command_buffers[image_index], data.imgui_command_buffers[image_index]];
 		let signal_semaphores = &[data.render_finished_semaphores[data.frame]];
 
 		let submit_info = vk::SubmitInfo::builder()
@@ -2261,12 +2421,16 @@ pub mod vh
 		device.destroy_command_pool(data.graphics_command_pool, None);
 		device.destroy_command_pool(data.transfer_command_pool, None);
 
+		#[cfg(not(feature = "goop_imgui"))]
 		device.destroy_device(None);
+		#[cfg(not(feature = "goop_imgui"))]
 		surface_loader.destroy_surface(data.surface, None);
+		#[cfg(not(feature = "goop_imgui"))]
 		if let (Some(du), Some(msg)) = (data.debug_utils.as_ref(), data.messenger.as_ref())
 		{
 			du.destroy_debug_utils_messenger(*msg, None);
 		}
+		#[cfg(not(feature = "goop_imgui"))]
 		instance.destroy_instance(None);
 	}
 }
