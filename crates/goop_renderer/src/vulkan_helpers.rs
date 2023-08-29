@@ -68,12 +68,7 @@ pub mod vh
 		descriptor_set_layout: vk::DescriptorSetLayout,
 		descriptor_pool: vk::DescriptorPool,
 		descriptor_sets: Vec<vk::DescriptorSet>,
-		mip_levels: u32,
 		textures: Vec<Texture>,
-		texture_image: vk::Image,
-		texture_image_memory: vk::DeviceMemory,
-		texture_image_view: vk::ImageView,
-		texture_sampler: vk::Sampler,
 		depth_image: vk::Image,
 		depth_image_memory: vk::DeviceMemory,
 		depth_image_view: vk::ImageView,
@@ -1236,9 +1231,9 @@ pub mod vh
 		Ok(())
 	}
 
-	pub fn create_texture_image(instance: &ash::Instance, device: &ash::Device, data: &mut Data) -> Result<()>
+	pub fn add_texture(instance: &ash::Instance, device: &ash::Device, data: &mut Data, image_path: &str) -> Result<u32>
 	{
-		let image = File::open("media/textures/earth.png")?;
+		let image = File::open(image_path)?;
 
 		let decoder = png::Decoder::new(image);
 		let mut reader = decoder.read_info()?;
@@ -1256,8 +1251,19 @@ pub mod vh
 
 		let (width, height) = reader.info().size();
 
-		data.mip_levels = (width.max(height) as f32).log2().floor() as u32 + 1;
+		let mut mip_levels = (width.max(height) as f32).log2().floor() as u32 + 1;
 
+		let (image, image_memory) = create_texture_image(instance, device, data, size, &mut pixels, &mut mip_levels, width, height)?;
+		let image_view = create_texture_image_view(device, data, image, mip_levels)?;
+		let sampler = create_texture_sampler(device, data, mip_levels)?;
+
+		data.textures.push(Texture { image, image_memory, image_view, sampler });
+
+		Ok(data.textures.len() as u32 - 1)
+	}
+
+	pub fn create_texture_image(instance: &ash::Instance, device: &ash::Device, data: &mut Data, size: u64, pixels: &mut Vec<u8>, mip_levels: &mut u32, width: u32, height: u32) -> Result<(vk::Image, vk::DeviceMemory)>
+	{
 		unsafe
 		{
 			let (staging_buffer, staging_buffer_memory) = create_buffer(
@@ -1280,7 +1286,7 @@ pub mod vh
 
 			device.unmap_memory(staging_buffer_memory);
 
-			data.mip_levels = (width.max(height) as f32).log2().floor() as u32 + 1;
+			*mip_levels = (width.max(height) as f32).log2().floor() as u32 + 1;
 
 			let(texture_image, texture_image_memory) = create_image(
 				instance,
@@ -1288,7 +1294,7 @@ pub mod vh
 				data,
 				width,
 				height,
-				data.mip_levels,
+				*mip_levels,
 				vk::SampleCountFlags::TYPE_1,
 				vk::Format::R8G8B8A8_SRGB,
 				vk::ImageTiling::OPTIMAL,
@@ -1297,23 +1303,20 @@ pub mod vh
 					| vk::ImageUsageFlags::TRANSFER_DST,
 				vk::MemoryPropertyFlags::DEVICE_LOCAL)?;
 
-			data.texture_image = texture_image;
-			data.texture_image_memory = texture_image_memory;
-
 			transition_image_layout(
 				device,
 				data,
-				data.texture_image,
+				texture_image,
 				vk::ImageLayout::UNDEFINED,
 				vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-				data.mip_levels,
+				*mip_levels,
 			)?;
 
 			copy_buffer_to_image(
 				device,
 				data,
 				staging_buffer,
-				data.texture_image,
+				texture_image,
 				width,
 				height,
 			)?;
@@ -1325,14 +1328,15 @@ pub mod vh
 				instance,
 				device,
 				data,
-				data.texture_image,
+				texture_image,
 				vk::Format::R8G8B8A8_SRGB,
 				width,
 				height,
-				data.mip_levels,
+				*mip_levels,
 			)?;
+
+			Ok((texture_image, texture_image_memory))
 		}
-		Ok(())
 	}
 
 	unsafe fn create_image_view(
@@ -1359,27 +1363,27 @@ pub mod vh
 		Ok(device.create_image_view(&info, None)?)
 	}
 
-	pub fn create_texture_image_views(
+	pub fn create_texture_image_view(
 		device: &ash::Device,
-		data: &mut Data
-		) -> Result<()>
+		data: &mut Data,
+		texture_image: vk::Image,
+		mip_levels: u32,
+		) -> Result<vk::ImageView>
 	{
-		data.texture_image_view = unsafe { create_image_view(
+		Ok(unsafe { create_image_view(
 			device,
-			data.texture_image,
+			texture_image,
 			vk::Format::R8G8B8A8_SRGB,
 			vk::ImageAspectFlags::COLOR,
-			data.mip_levels,
-		)?};
-
-
-		Ok(())
+			mip_levels,
+		)?})
 	}
 
 	pub fn create_texture_sampler(
 		device: &ash::Device,
 		data: &mut Data,
-		) -> Result<()>
+		mip_levels: u32,
+		) -> Result<vk::Sampler>
 	{
 		let info = vk::SamplerCreateInfo::builder()
 			.mag_filter(vk::Filter::LINEAR)
@@ -1396,10 +1400,9 @@ pub mod vh
 			.mipmap_mode(vk::SamplerMipmapMode::LINEAR)
 			.mip_lod_bias(0.0)
 			.min_lod(0.0)
-			.max_lod(data.mip_levels as f32);
+			.max_lod(mip_levels as f32);
 
-		data.texture_sampler = unsafe { device.create_sampler(&info, None)? } ;
-		Ok(())
+		Ok(unsafe { device.create_sampler(&info, None)? })
 	}
 
 	unsafe fn get_memory_type_index(
@@ -1741,8 +1744,8 @@ pub mod vh
 
 			let info = vk::DescriptorImageInfo::builder()
 				.image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-				.image_view(data.texture_image_view)
-				.sampler(data.texture_sampler);
+				.image_view(data.textures[0].image_view)
+				.sampler(data.textures[0].sampler);
 
 			let image_info = &[*info];
 			let sampler_write = vk::WriteDescriptorSet::builder()
@@ -2332,10 +2335,10 @@ pub mod vh
 		data.graphics_command_pools
 			.iter()
 			.for_each(|cp| device.destroy_command_pool(*cp, None));
-		device.destroy_sampler(data.texture_sampler, None);
-		device.destroy_image_view(data.texture_image_view, None);
-		device.destroy_image(data.texture_image, None);
-		device.free_memory(data.texture_image_memory, None);
+		device.destroy_sampler(data.textures[0].sampler, None);
+		device.destroy_image_view(data.textures[0].image_view, None);
+		device.destroy_image(data.textures[0].image, None);
+		device.free_memory(data.textures[0].image_memory, None);
 		device.destroy_descriptor_set_layout(data.descriptor_set_layout, None);
 		device.destroy_buffer(data.index_buffer, None);
 		device.free_memory(data.index_buffer_memory, None);

@@ -95,9 +95,14 @@ impl Renderer
 		vh::create_color_objects(&instance, &device, &mut data)?;
 		vh::create_depth_objects(&instance, &device, &mut data)?;
 		vh::create_framebuffers(&device, &mut data)?;
+		vh::add_texture(&instance, &device, &mut data, "media/textures/earth.png")?;
+
+		/*
 		vh::create_texture_image(&instance, &device, &mut data)?;
 		vh::create_texture_image_views(&device, &mut data)?;
 		vh::create_texture_sampler(&device, &mut data)?;
+		*/
+
 		vh::create_uniform_buffers(&instance, &device, &mut data)?;
 		vh::create_descriptor_pool(&device, &mut data)?;
 		vh::create_descriptor_sets(&device, &mut data)?;
