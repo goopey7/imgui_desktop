@@ -105,6 +105,7 @@ impl Renderer
 		vh::create_sync_objects(&device, &mut data)?;
 
 		vh::load_model(&mut data)?;
+		vh::create_instance_buffer(&instance, &device, &mut data)?;
 		vh::create_vertex_buffer(&instance, &device, &mut data)?;
 		vh::create_index_buffer(&instance, &device, &mut data)?;
 

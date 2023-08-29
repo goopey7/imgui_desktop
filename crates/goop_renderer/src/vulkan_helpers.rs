@@ -44,8 +44,11 @@ pub mod vh
 		image_available_semaphores: Vec<vk::Semaphore>,
 		render_finished_semaphores: Vec<vk::Semaphore>,
 		images_in_flight: Vec<vk::Fence>,
+		instances: Vec<InstanceData>,
 		vertices: Vec<Vertex>,
 		indices: Vec<u32>,
+		instance_buffer: vk::Buffer,
+		instance_buffer_memory: vk::DeviceMemory,
 		vertex_buffer: vk::Buffer,
 		vertex_buffer_memory: vk::DeviceMemory,
 		index_buffer: vk::Buffer,
@@ -601,6 +604,58 @@ pub mod vh
 
 	#[repr(C)]
 	#[derive(Copy, Clone, Debug)]
+	struct InstanceData
+	{
+		transform: glm::Mat4,
+	}
+	
+	impl InstanceData
+	{
+		fn binding_description() -> vk::VertexInputBindingDescription
+		{
+			vk::VertexInputBindingDescription::builder()
+				.binding(1)
+				.stride(size_of::<InstanceData>() as u32)
+				.input_rate(vk::VertexInputRate::INSTANCE)
+				.build()
+		}
+
+		fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 4]
+		{
+			let row0 = vk::VertexInputAttributeDescription::builder()
+				.binding(1)
+				.location(3)
+				.format(vk::Format::R32G32B32A32_SFLOAT)
+				.offset(0 * size_of::<glm::Vec4>() as u32)
+				.build();
+
+			let row1 = vk::VertexInputAttributeDescription::builder()
+				.binding(1)
+				.location(4)
+				.format(vk::Format::R32G32B32A32_SFLOAT)
+				.offset(1 * size_of::<glm::Vec4>() as u32)
+				.build();
+
+			let row2 = vk::VertexInputAttributeDescription::builder()
+				.binding(1)
+				.location(5)
+				.format(vk::Format::R32G32B32A32_SFLOAT)
+				.offset(2 * size_of::<glm::Vec4>() as u32)
+				.build();
+
+			let row3 = vk::VertexInputAttributeDescription::builder()
+				.binding(1)
+				.location(6)
+				.format(vk::Format::R32G32B32A32_SFLOAT)
+				.offset(3 * size_of::<glm::Vec4>() as u32)
+				.build();
+
+			[row0, row1, row2, row3]
+		}
+	}
+
+	#[repr(C)]
+	#[derive(Copy, Clone, Debug)]
 	struct Vertex
 	{
 		pos: glm::Vec3,
@@ -703,11 +758,19 @@ pub mod vh
 
 		let stages = &[*vert_stage, *frag_stage];
 
-		let binding_descriptions = &[Vertex::binding_description()];
-		let attribute_descriptions = Vertex::attribute_descriptions();
+		let binding_descriptions = &[Vertex::binding_description(), InstanceData::binding_description()];
+		let attribute_descriptions = &[
+			Vertex::attribute_descriptions()[0],
+			Vertex::attribute_descriptions()[1],
+			Vertex::attribute_descriptions()[2],
+			InstanceData::attribute_descriptions()[0],
+			InstanceData::attribute_descriptions()[1],
+			InstanceData::attribute_descriptions()[2],
+			InstanceData::attribute_descriptions()[3],
+		];
 		let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder()
 			.vertex_binding_descriptions(binding_descriptions)
-			.vertex_attribute_descriptions(&attribute_descriptions);
+			.vertex_attribute_descriptions(attribute_descriptions);
 
 		let input_assembly_info = vk::PipelineInputAssemblyStateCreateInfo::builder()
 			.topology(vk::PrimitiveTopology::TRIANGLE_LIST)
@@ -1444,6 +1507,51 @@ pub mod vh
 		Ok(())
 	}
 
+	pub fn create_instance_buffer(instance: &ash::Instance, device: &ash::Device, data: &mut Data) -> Result<()>
+	{
+		let size = (size_of::<InstanceData>() * data.instances.len()) as u64;
+
+		unsafe {
+			let (staging_buffer, staging_buffer_memory) = create_buffer(
+				instance,
+				device,
+				data,
+				size,
+				vk::BufferUsageFlags::TRANSFER_SRC,
+				vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
+			)?;
+
+			let memory = device.map_memory(
+				staging_buffer_memory,
+				0,
+				size,
+				vk::MemoryMapFlags::empty()
+				)?;
+
+				memcpy(data.instances.as_ptr(), memory.cast(), data.instances.len());
+				device.unmap_memory(staging_buffer_memory);
+
+			let (instance_buffer, instance_buffer_memory) = create_buffer(
+				instance,
+				device,
+				data,
+				size,
+				vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::VERTEX_BUFFER,
+				vk::MemoryPropertyFlags::DEVICE_LOCAL,
+			)?;
+
+			data.instance_buffer = instance_buffer;
+			data.instance_buffer_memory = instance_buffer_memory;
+
+			copy_buffer(device, data, staging_buffer, instance_buffer, size)?;
+
+			device.destroy_buffer(staging_buffer, None);
+			device.free_memory(staging_buffer_memory, None);
+		}
+
+		Ok(())
+	}
+
 	pub fn create_vertex_buffer(instance: &ash::Instance, device: &ash::Device, data: &mut Data) -> Result<()>
 	{
 		let size = (size_of::<Vertex>() * data.vertices.len()) as u64;
@@ -1714,7 +1822,7 @@ pub mod vh
 			data.swapchain_extent.width as f32 / data.swapchain_extent.height as f32,
 			glm::radians(&glm::vec1(45.0))[0],
 			0.1,
-			10.0,
+			100.0,
 		);
 
 		//proj[(1,1)] *= -1.0;
@@ -1818,6 +1926,14 @@ pub mod vh
 
 	pub fn load_model(data: &mut Data) -> Result<()>
 	{
+		data.instances.push(
+			InstanceData { transform: glm::identity() }
+		);
+
+		data.instances.push(
+			InstanceData { transform: glm::translate(&glm::identity(), &glm::vec3(3.0,0.0,0.0)) }
+		);
+
 		let mut reader = BufReader::new(File::open("media/models/viking_room.obj")?);
 
 		let (models, _) = tobj::load_obj_buf(
@@ -1994,9 +2110,10 @@ pub mod vh
 		unsafe
 		{
 			device.cmd_begin_render_pass(cb, &info, vk::SubpassContents::INLINE);
-
-						device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, data.pipeline);
+			device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, data.pipeline);
+					
 			device.cmd_bind_vertex_buffers(cb, 0, &[data.vertex_buffer], &[0]);
+			device.cmd_bind_vertex_buffers(cb, 1, &[data.instance_buffer], &[0]);
 			device.cmd_bind_index_buffer(cb, data.index_buffer, 0, vk::IndexType::UINT32);
 			device.cmd_bind_descriptor_sets(
 				cb,
@@ -2020,7 +2137,7 @@ pub mod vh
 				64,
 				&opacity.to_ne_bytes()[..],
 			);
-			device.cmd_draw_indexed(cb, data.indices.len() as u32, 3, 0, 0, 0);
+			device.cmd_draw_indexed(cb, data.indices.len() as u32, 2, 0, 0, 0);
 
 			#[cfg(feature = "goop_imgui")]
 			renderer.cmd_draw(cb, draw_data)?;
