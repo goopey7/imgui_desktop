@@ -739,7 +739,7 @@ pub mod vh
 
 		let rasterizer_info = vk::PipelineRasterizationStateCreateInfo::builder()
 			.line_width(1.0)
-			.front_face(vk::FrontFace::COUNTER_CLOCKWISE)
+			.front_face(vk::FrontFace::CLOCKWISE)
 			.cull_mode(vk::CullModeFlags::BACK)
 			.polygon_mode(vk::PolygonMode::FILL);
 
@@ -1705,19 +1705,19 @@ pub mod vh
 	fn update_uniform_buffer(device: &ash::Device, image_index: usize, data: &Data) -> Result<()>
 	{
 		let view = glm::look_at(
-			&glm::vec3(2.0,2.0,2.0),
+			&glm::vec3(0.0,0.0,8.0),
 			&glm::vec3(0.0,0.0,0.0),
-			&glm::vec3(0.0,0.0,1.0),
+			&glm::vec3(0.0,1.0,0.0),
 		);
 
-		let mut proj = glm::perspective_rh_zo(
+		let proj = glm::perspective_rh_zo(
 			data.swapchain_extent.width as f32 / data.swapchain_extent.height as f32,
 			glm::radians(&glm::vec1(45.0))[0],
 			0.1,
 			10.0,
 		);
 
-		proj[(1,1)] *= -1.0;
+		//proj[(1,1)] *= -1.0;
 
 		let ubo = UniformBufferObject { view, proj };
 
@@ -1947,10 +1947,17 @@ pub mod vh
 		let time = start.elapsed().as_secs_f32();
 
 		let model = glm::rotate(
-			&glm::identity(),
-			time * glm::radians(&glm::vec1(90.0))[0],
+			&glm::Mat4::identity(),
+			glm::radians(&glm::vec1(90.0))[0],
+			&glm::vec3(1.0, 0.0, 0.0),
+		);
+
+		let model = glm::rotate(
+			&model,
+			time,
 			&glm::vec3(0.0, 0.0, 1.0),
 		);
+
 		let (_, model_bytes, _) = unsafe { model.as_slice().align_to::<u8>() };
 
 		let opacity = (0.5 * start.elapsed().as_secs_f32()).sin().abs();
@@ -2013,7 +2020,7 @@ pub mod vh
 				64,
 				&opacity.to_ne_bytes()[..],
 			);
-			device.cmd_draw_indexed(cb, data.indices.len() as u32, 1, 0, 0, 0);
+			device.cmd_draw_indexed(cb, data.indices.len() as u32, 3, 0, 0, 0);
 
 			#[cfg(feature = "goop_imgui")]
 			renderer.cmd_draw(cb, draw_data)?;

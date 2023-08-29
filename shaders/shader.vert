@@ -23,6 +23,14 @@ layout(location = 1) out vec2 fragTexCoord;
 void main()
 {
 	gl_Position = ubo.proj * ubo.view * pcs.model * vec4(inPos, 1.0);
+	if (gl_InstanceIndex == 0)
+	{
+		gl_Position -= vec4(5.0, 0.0, 0.0, 0.0);
+	}
+	if (gl_InstanceIndex == 2)
+	{
+		gl_Position += vec4(5.0, 0.0, 0.0, 0.0);
+	}
 	fragColor = inCol;
 	fragTexCoord = inTexCoord;
 }
