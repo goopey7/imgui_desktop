@@ -6,7 +6,7 @@ use winit::
 	event_loop::{EventLoop, ControlFlow},
 	window::{Window, WindowBuilder},
 	dpi::LogicalSize,
-	event::{Event, WindowEvent}
+	event::{Event, WindowEvent, VirtualKeyCode}
 };
 use anyhow::Result;
 
@@ -88,11 +88,19 @@ impl App
 					}
 				},
 				// Handle Input
-				/*
 				Event::WindowEvent {event: WindowEvent::KeyboardInput { input, .. }, .. } =>
 				{
+					if let Some(keycode) = input.virtual_keycode
+					{
+						if input.state == winit::event::ElementState::Pressed
+						{
+							if keycode == VirtualKeyCode::R
+							{
+								self.renderer.toggle_wireframe(&self.window);
+							}
+						}
+					}
 				},
-				*/
 				// Destroy App (renderer gets dropped automatically)
 				Event::WindowEvent { event: WindowEvent::CloseRequested, .. } =>
 				{

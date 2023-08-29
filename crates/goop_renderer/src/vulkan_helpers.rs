@@ -18,6 +18,7 @@ pub mod vh
 	#[derive(Default, Clone)]
 	pub struct Data
 	{
+		wireframe: bool,
 		pub resized: bool,
 		frame: usize,
 		surface: vk::SurfaceKHR,
@@ -804,7 +805,7 @@ pub mod vh
 			.line_width(1.0)
 			.front_face(vk::FrontFace::CLOCKWISE)
 			.cull_mode(vk::CullModeFlags::BACK)
-			.polygon_mode(vk::PolygonMode::FILL);
+			.polygon_mode(if !data.wireframe { vk::PolygonMode::FILL } else { vk::PolygonMode::LINE });
 
 		let multisampler_info = vk::PipelineMultisampleStateCreateInfo::builder()
 			// enable sample shading
@@ -1227,7 +1228,7 @@ pub mod vh
 
 	pub fn create_texture_image(instance: &ash::Instance, device: &ash::Device, data: &mut Data) -> Result<()>
 	{
-		let image = File::open("media/textures/viking_room.png")?;
+		let image = File::open("media/textures/earth.png")?;
 
 		let decoder = png::Decoder::new(image);
 		let mut reader = decoder.read_info()?;
@@ -1934,7 +1935,7 @@ pub mod vh
 			InstanceData { transform: glm::translate(&glm::identity(), &glm::vec3(3.0,0.0,0.0)) }
 		);
 
-		let mut reader = BufReader::new(File::open("media/models/viking_room.obj")?);
+		let mut reader = BufReader::new(File::open("media/models/smallSphere.obj")?);
 
 		let (models, _) = tobj::load_obj_buf(
 			&mut reader,
@@ -2145,6 +2146,15 @@ pub mod vh
 			device.cmd_end_render_pass(cb);
 			device.end_command_buffer(cb)?;
 		}
+
+		Ok(())
+	}
+
+	pub fn toggle_wireframe(instance: &ash::Instance, device: &ash::Device, surface_loader: &ash::extensions::khr::Surface, window: &Window, data: &mut Data) -> Result<()>
+	{
+		data.wireframe = !data.wireframe;
+
+		recreate_swapchain(instance, device, surface_loader, window, data)?;
 
 		Ok(())
 	}

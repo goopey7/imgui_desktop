@@ -140,6 +140,10 @@ impl Renderer
 		ui.main_menu_bar(||
 		{
 			ui.text("Goop");
+			if ui.button("Wireframe")
+			{
+				self.toggle_wireframe(&window);
+			}
 		}
 		);
 
@@ -161,6 +165,17 @@ impl Renderer
 	pub fn resize(&mut self)
 	{
 		self.data.resized = true;
+	}
+
+	pub fn toggle_wireframe(&mut self, window: &Window)
+	{
+		vh::toggle_wireframe(
+			&self.instance,
+			&self.device,
+			&self.surface,
+			&window,
+			&mut self.data,
+		).unwrap();
 	}
 }
 
