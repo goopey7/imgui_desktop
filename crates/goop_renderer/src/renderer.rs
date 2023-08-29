@@ -139,11 +139,16 @@ impl Renderer
 
 		ui.main_menu_bar(||
 		{
-			ui.text("Goop");
-			if ui.button("Wireframe")
-			{
-				self.toggle_wireframe(&window);
-			}
+			ui.menu("View", || {
+				if ui.menu_item_config("Wireframe")
+					.selected(self.data.wireframe)
+					.build()
+				{
+					self.toggle_wireframe(&window);
+				}
+			});
+			ui.spacing();
+			ui.text(format!("FPS: {:.1}", 1.0 / ui.io().delta_time));
 		}
 		);
 

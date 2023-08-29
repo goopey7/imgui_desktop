@@ -18,7 +18,7 @@ pub mod vh
 	#[derive(Default, Clone)]
 	pub struct Data
 	{
-		wireframe: bool,
+		pub wireframe: bool,
 		pub resized: bool,
 		frame: usize,
 		surface: vk::SurfaceKHR,
