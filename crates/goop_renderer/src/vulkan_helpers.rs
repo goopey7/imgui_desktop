@@ -16,6 +16,15 @@ pub mod vh
 	const MAX_FRAMES_IN_FLIGHT: usize = 3;
 
 	#[derive(Default, Clone)]
+	struct Texture
+	{
+		image: vk::Image,
+		image_memory: vk::DeviceMemory,
+		image_view: vk::ImageView,
+		sampler: vk::Sampler,
+	}
+
+	#[derive(Default, Clone)]
 	pub struct Data
 	{
 		pub wireframe: bool,
@@ -60,6 +69,7 @@ pub mod vh
 		descriptor_pool: vk::DescriptorPool,
 		descriptor_sets: Vec<vk::DescriptorSet>,
 		mip_levels: u32,
+		textures: Vec<Texture>,
 		texture_image: vk::Image,
 		texture_image_memory: vk::DeviceMemory,
 		texture_image_view: vk::ImageView,
