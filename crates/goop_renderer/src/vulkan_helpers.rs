@@ -613,6 +613,7 @@ pub mod vh
 	struct InstanceData
 	{
 		transform: glm::Mat4,
+		texture_id: u32,
 	}
 	
 	impl InstanceData
@@ -626,7 +627,7 @@ pub mod vh
 				.build()
 		}
 
-		fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 4]
+		fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 5]
 		{
 			let row0 = vk::VertexInputAttributeDescription::builder()
 				.binding(1)
@@ -656,7 +657,14 @@ pub mod vh
 				.offset(3 * size_of::<glm::Vec4>() as u32)
 				.build();
 
-			[row0, row1, row2, row3]
+			let texture_id = vk::VertexInputAttributeDescription::builder()
+				.binding(1)
+				.location(7)
+				.format(vk::Format::R32_UINT)
+				.offset(4 * size_of::<glm::Vec4>() as u32)
+				.build();
+
+			[row0, row1, row2, row3, texture_id]
 		}
 	}
 
@@ -773,6 +781,7 @@ pub mod vh
 			InstanceData::attribute_descriptions()[1],
 			InstanceData::attribute_descriptions()[2],
 			InstanceData::attribute_descriptions()[3],
+			InstanceData::attribute_descriptions()[4],
 		];
 		let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder()
 			.vertex_binding_descriptions(binding_descriptions)
@@ -1944,11 +1953,13 @@ pub mod vh
 	pub fn load_model(data: &mut Data) -> Result<()>
 	{
 		data.instances.push(
-			InstanceData { transform: glm::identity() }
+			InstanceData { transform: glm::identity(), texture_id: 0 }
 		);
 
 		data.instances.push(
-			InstanceData { transform: glm::translate(&glm::identity(), &glm::vec3(3.0,0.0,0.0)) }
+			InstanceData { transform: glm::translate(&glm::identity(), &glm::vec3(3.0,0.0,0.0)),
+			texture_id: 1,
+			}
 		);
 
 		let mut reader = BufReader::new(File::open("media/models/smallSphere.obj")?);

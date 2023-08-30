@@ -21,9 +21,13 @@ layout(location = 4) in vec4 transform1;
 layout(location = 5) in vec4 transform2;
 layout(location = 6) in vec4 transform3;
 
+// instance texture id
+layout(location = 7) in uint texId;
+
 // output color
 layout(location = 0) out vec3 fragColor;
 layout(location = 1) out vec2 fragTexCoord;
+layout(location = 2) out flat uint fragTexId;
 
 // gets invoked for each vertex
 void main()
@@ -32,5 +36,6 @@ void main()
 	gl_Position = ubo.proj * ubo.view * pcs.model * transform * vec4(inPos, 1.0);
 	fragColor = inCol;
 	fragTexCoord = inTexCoord;
+	fragTexId = texId;
 }
 
