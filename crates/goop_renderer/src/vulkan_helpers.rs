@@ -1255,7 +1255,7 @@ pub mod vh
 
 		let (image, image_memory) = create_texture_image(instance, device, data, size, &mut pixels, &mut mip_levels, width, height)?;
 		let image_view = create_texture_image_view(device, data, image, mip_levels)?;
-		let sampler = create_texture_sampler(device, data, mip_levels)?;
+		let sampler = create_texture_sampler(device, mip_levels)?;
 
 		data.textures.push(Texture { image, image_memory, image_view, sampler });
 
@@ -1381,7 +1381,6 @@ pub mod vh
 
 	pub fn create_texture_sampler(
 		device: &ash::Device,
-		data: &mut Data,
 		mip_levels: u32,
 		) -> Result<vk::Sampler>
 	{
@@ -1704,7 +1703,7 @@ pub mod vh
 
 		let sampler_size = vk::DescriptorPoolSize::builder()
 			.ty(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-			.descriptor_count(data.swapchain_images.len() as u32);
+			.descriptor_count(2 * data.swapchain_images.len() as u32);
 
 		let pool_sizes = &[*ubo_size, *sampler_size];
 		let info = vk::DescriptorPoolCreateInfo::builder()
@@ -1740,23 +1739,27 @@ pub mod vh
 				.dst_binding(0)
 				.dst_array_element(0)
 				.descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-				.buffer_info(buffer_info);
+				.buffer_info(buffer_info)
+				.build();
 
-			let info = vk::DescriptorImageInfo::builder()
+			let image_infos = data.textures.iter().map(|t| {
+				vk::DescriptorImageInfo::builder()
 				.image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-				.image_view(data.textures[0].image_view)
-				.sampler(data.textures[0].sampler);
+				.image_view(t.image_view)
+				.sampler(t.sampler)
+				.build()
+			}).collect::<Vec<_>>();
 
-			let image_info = &[*info];
 			let sampler_write = vk::WriteDescriptorSet::builder()
 				.dst_set(data.descriptor_sets[i])
 				.dst_binding(1)
 				.dst_array_element(0)
 				.descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-				.image_info(image_info);
+				.image_info(&image_infos)
+				.build();
 
 			unsafe { device.update_descriptor_sets(
-				&[*ubo_write, *sampler_write],
+				&[ubo_write, sampler_write],
 				&[] as &[vk::CopyDescriptorSet]
 			) };
 		}
@@ -1774,7 +1777,7 @@ pub mod vh
 		let sampler_binding = vk::DescriptorSetLayoutBinding::builder()
 			.binding(1)
 			.descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-			.descriptor_count(1)
+			.descriptor_count(2)
 			.stage_flags(vk::ShaderStageFlags::FRAGMENT);
 
 		let bindings = &[*ubo_binding, *sampler_binding];
