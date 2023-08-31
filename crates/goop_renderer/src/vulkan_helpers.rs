@@ -54,11 +54,11 @@ pub mod vh
 		image_available_semaphores: Vec<vk::Semaphore>,
 		render_finished_semaphores: Vec<vk::Semaphore>,
 		images_in_flight: Vec<vk::Fence>,
-		instances: Vec<Vec<InstanceData>>,
+		instances: Vec<Option<Vec<InstanceData>>>,
 		vertices: Vec<Vertex>,
 		indices: Vec<u32>,
-		instance_buffers: Vec<vk::Buffer>,
-		instance_buffer_memories: Vec<vk::DeviceMemory>,
+		instance_buffers: Vec<Option<vk::Buffer>>,
+		instance_buffer_memories: Vec<Option<vk::DeviceMemory>>,
 		vertex_buffer: vk::Buffer,
 		vertex_buffer_memory: vk::DeviceMemory,
 		index_buffer: vk::Buffer,
@@ -78,6 +78,7 @@ pub mod vh
 		debug_utils: Option<ash::extensions::ext::DebugUtils>,
 		messenger: Option<vk::DebugUtilsMessengerEXT>,
 		index_offsets: Vec<u32>,
+		model_count: u32,
 	}
 
 	#[derive(Copy, Clone, Debug)]
@@ -611,10 +612,18 @@ pub mod vh
 
 	#[repr(C)]
 	#[derive(Copy, Clone, Debug)]
-	struct InstanceData
+	pub struct InstanceData
 	{
 		transform: glm::Mat4,
 		texture_id: u32,
+	}
+
+	impl InstanceData
+	{
+		pub fn new(transform: glm::Mat4, texture_id: u32) -> Self
+		{
+			Self { transform, texture_id }
+		}
 	}
 	
 	impl InstanceData
@@ -1535,14 +1544,16 @@ pub mod vh
 	{
 		for model_index in 0..data.index_offsets.len() - 1
 		{
-			let instances = data.instances.get(model_index as usize);
+			let instances = &data.instances[model_index as usize];
 
 			if instances.is_none()
 			{
+				data.instance_buffers.push(None);
+				data.instance_buffer_memories.push(None);
 				continue;
 			}
 
-			let instances = instances.unwrap();
+			let instances = instances.as_ref().unwrap();
 
 			let size = (size_of::<InstanceData>() * instances.len()) as u64;
 
@@ -1563,7 +1574,7 @@ pub mod vh
 					vk::MemoryMapFlags::empty()
 					)?;
 
-					memcpy(data.instances[model_index as usize].as_ptr(), memory.cast(), data.instances[model_index as usize].len());
+					memcpy(instances.as_ptr(), memory.cast(), instances.len());
 					device.unmap_memory(staging_buffer_memory);
 
 				let (instance_buffer, instance_buffer_memory) = create_buffer(
@@ -1575,8 +1586,8 @@ pub mod vh
 					vk::MemoryPropertyFlags::DEVICE_LOCAL,
 				)?;
 
-				data.instance_buffers.push(instance_buffer);
-				data.instance_buffer_memories.push(instance_buffer_memory);
+				data.instance_buffers.push(Some(instance_buffer));
+				data.instance_buffer_memories.push(Some(instance_buffer_memory));
 
 				copy_buffer(device, data, staging_buffer, instance_buffer, size)?;
 
@@ -1964,31 +1975,59 @@ pub mod vh
 		Ok(())
 	}
 
-	pub fn load_model(data: &mut Data, model_path: &str) -> Result<()>
+	pub fn load_vertics(data: &mut Data, vertices: Vec<glm::Vec3>, indices: Vec<u32>, colors: Option<Vec<glm::Vec3>>, tex_coords: Option<Vec<glm::Vec2>>) -> Result<()>
 	{
-		// TODO place this somewhere else
+		let mut unique_vertices = HashMap::new();
+
+		for index in indices
+		{
+			// TODO eww
+			let colors = colors.clone().unwrap_or(vec![glm::vec3(1.0,1.0,1.0); vertices.len()]);
+			let tex_coords = tex_coords.clone().unwrap_or(vec![glm::vec2(0.0,0.0); vertices.len()]);
+
+			let vertex = Vertex
+			{
+				pos: vertices[index as usize],
+				color: colors[index as usize],
+				tex_coord: tex_coords[index as usize],
+			};
+
+			if let Some(index) = unique_vertices.get(&vertex)
+			{
+				data.indices.push(*index as u32);
+			}
+			else
+			{
+				let index = data.vertices.len();
+				unique_vertices.insert(vertex, index);
+				data.vertices.push(vertex);
+				data.indices.push(index as u32);
+			}
+		}
+
+		Ok(())
+	}
+
+	pub fn prep_instances(data: &mut Data) -> Result<()>
+	{
+		for _ in 0..data.model_count
+		{
+			data.instances.push(None);
+		}
+
+		Ok(())
+	}
+
+	pub fn load_instances(data: &mut Data, model_index: usize, instances: Vec<InstanceData>) -> Result<()>
+	{
+		data.instances[model_index] = Some(instances);
+		Ok(())
+	}
+
+	pub fn load_model(data: &mut Data, model_path: &str) -> Result<usize>
+	{
 		if data.index_offsets.is_empty()
 		{
-			// PLANETS
-			data.instances.push(
-			vec![
-					InstanceData { transform: glm::identity(), texture_id: 0, },
-					InstanceData { transform: glm::translate(&glm::identity(), &glm::vec3(3.0,0.0,0.0)),
-					texture_id: 1,
-					}
-				],
-			);
-
-			// HOUSES
-			data.instances.push(
-			vec![
-					InstanceData { transform: glm::identity(), texture_id: 3, },
-					InstanceData { transform: glm::translate(&glm::identity(), &glm::vec3(3.0,0.0,0.0)),
-					texture_id: 0,
-					}
-				]
-			);
-
 			data.index_offsets.push(0);
 		}
 
@@ -2036,7 +2075,8 @@ pub mod vh
 			}
 		}
 		data.index_offsets.push(data.indices.len() as u32);
-		Ok(())
+		data.model_count += 1;
+		Ok((data.model_count - 1) as usize)
 	}
 
 	pub fn set_msaa_samples(instance: &ash::Instance, data: &mut Data) -> Result<()>
@@ -2199,6 +2239,14 @@ pub mod vh
 			for i in 0..data.instances.len()
 			{
 				let instance_data = data.instance_buffers[i];
+
+				if instance_data.is_none()
+				{
+					continue;
+				}
+
+				let instance_data = instance_data.unwrap();
+
 				device.cmd_bind_vertex_buffers(cb, 1, &[instance_data], &[0]);
 				device.cmd_draw_indexed(cb, data.index_offsets[i + 1] - data.index_offsets[i], 2, data.index_offsets[i], 0, 0);
 			}

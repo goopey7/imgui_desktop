@@ -2,6 +2,7 @@ use anyhow::Result;
 use std::time::Instant;
 use winit::window::Window;
 use crate::vulkan_helpers::vh::{Data, self};
+use nalgebra_glm as glm;
 
 #[cfg(feature = "goop_imgui")]
 use imgui::*;
@@ -91,11 +92,9 @@ impl Renderer
 		vh::create_render_pass(&instance, &device, &mut data)?;
 		vh::create_command_pools(&instance, &device, &surface, &mut data)?;
 
-		vh::add_texture(&instance, &device, &mut data, "media/textures/earth.png")?;
-		vh::add_texture(&instance, &device, &mut data, "media/textures/moon.png")?;
-		vh::add_texture(&instance, &device, &mut data, "media/textures/earth.png")?;
-		vh::add_texture(&instance, &device, &mut data, "media/textures/viking_room.png")?;
-		vh::add_texture(&instance, &device, &mut data, "media/textures/moon.png")?;
+		let earth_tex = vh::add_texture(&instance, &device, &mut data, "media/textures/earth.png")?;
+		let moon_tex = vh::add_texture(&instance, &device, &mut data, "media/textures/moon.png")?;
+		let viking_tex = vh::add_texture(&instance, &device, &mut data, "media/textures/viking_room.png")?;
 
 		vh::create_descriptor_set_layout(&device, &mut data)?;
 		vh::create_pipeline(&device, &mut data)?;
@@ -107,9 +106,29 @@ impl Renderer
 		vh::create_descriptor_sets(&device, &mut data)?;
 		vh::create_command_buffers(&device, &mut data)?;
 		vh::create_sync_objects(&device, &mut data)?;
-		vh::load_model(&mut data, "media/models/smallSphere.obj")?;
-		vh::load_model(&mut data, "media/models/viking_room.obj")?;
-		vh::load_model(&mut data, "media/models/largeSphere.obj")?;
+
+		// LOAD MODELS
+		let planet_model = vh::load_model(&mut data, "media/models/smallSphere.obj")?;
+		let room_model = vh::load_model(&mut data, "media/models/viking_room.obj")?;
+		let large_planet_model = vh::load_model(&mut data, "media/models/largeSphere.obj")?;
+
+		let traingle_verts = vec![glm::vec3(0.0, 0.0, 0.0), glm::vec3(1.0, 0.0, 0.0), glm::vec3(0.0, 1.0, 0.0)];
+		let triangle_indices = vec![0, 1, 2];
+		//vh::load_vertics(&mut data, traingle_verts, triangle_indices, None, None)?;
+
+		vh::prep_instances(&mut data)?;
+
+		// LOAD INSTANCES
+		let earth = vh::InstanceData::new(glm::Mat4::identity(), earth_tex);
+		let moon = vh::InstanceData::new(glm::Mat4::identity(), moon_tex);
+		//vh::load_instances(&mut data, planet_model, vec![moon])?;
+
+		let room = vh::InstanceData::new(glm::translate(&glm::Mat4::identity(), &glm::vec3(2.0, 0.0, 0.0)), viking_tex);
+		let room1 = vh::InstanceData::new(glm::translate(&glm::Mat4::identity(), &glm::vec3(0.0, 0.0, 0.0)), viking_tex);
+		let room2 = vh::InstanceData::new(glm::translate(&glm::Mat4::identity(), &glm::vec3(-2.0, 0.0, 0.0)), viking_tex);
+		vh::load_instances(&mut data, room_model, vec![room1, room2, room])?;
+
+
 		vh::create_instance_buffers(&instance, &device, &mut data)?;
 		vh::create_vertex_buffer(&instance, &device, &mut data)?;
 		vh::create_index_buffer(&instance, &device, &mut data)?;

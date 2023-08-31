@@ -33,7 +33,7 @@ layout(location = 2) out flat uint fragTexId;
 void main()
 {
 	mat4 transform = mat4(transform0, transform1, transform2, transform3);
-	gl_Position = ubo.proj * ubo.view * pcs.model * transform * vec4(inPos, 1.0);
+	gl_Position = ubo.proj * ubo.view * transform * pcs.model * vec4(inPos, 1.0);
 	fragColor = inCol;
 	fragTexCoord = inTexCoord;
 	fragTexId = texId;
