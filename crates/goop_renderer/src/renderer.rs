@@ -109,27 +109,33 @@ impl Renderer
 
 		// LOAD MODELS
 		let planet_model = vh::load_model(&mut data, "media/models/smallSphere.obj")?;
+		let large_pm = vh::load_model(&mut data, "media/models/largeSphere.obj")?;
 		let room_model = vh::load_model(&mut data, "media/models/viking_room.obj")?;
-		let large_planet_model = vh::load_model(&mut data, "media/models/largeSphere.obj")?;
 
 		let traingle_verts = vec![glm::vec3(0.0, 0.0, 0.0), glm::vec3(1.0, 0.0, 0.0), glm::vec3(0.0, 1.0, 0.0)];
 		let triangle_indices = vec![0, 1, 2];
 		//vh::load_vertics(&mut data, traingle_verts, triangle_indices, None, None)?;
 
-		vh::prep_instances(&mut data)?;
-
 		// LOAD INSTANCES
+		vh::prep_instances(&mut data)?;
 		let earth = vh::InstanceData::new(glm::Mat4::identity(), earth_tex);
 		let moon = vh::InstanceData::new(glm::Mat4::identity(), moon_tex);
 		//vh::load_instances(&mut data, planet_model, vec![moon])?;
 
 		let room = vh::InstanceData::new(glm::translate(&glm::Mat4::identity(), &glm::vec3(2.0, 0.0, 0.0)), viking_tex);
-		let room1 = vh::InstanceData::new(glm::translate(&glm::Mat4::identity(), &glm::vec3(0.0, 0.0, 0.0)), viking_tex);
-		let room2 = vh::InstanceData::new(glm::translate(&glm::Mat4::identity(), &glm::vec3(-2.0, 0.0, 0.0)), viking_tex);
-		vh::load_instances(&mut data, room_model, vec![room1, room2, room])?;
+		let room1 = vh::InstanceData::new(glm::translate(&glm::Mat4::identity(), &glm::vec3(-2.0, 0.0, 0.0)), viking_tex);
+		let room2 = vh::InstanceData::new(glm::translate(&glm::Mat4::identity(), &glm::vec3(0.0, 0.0, 0.0)), viking_tex);
+		let room3 = vh::InstanceData::new(glm::translate(&glm::Mat4::identity(), &glm::vec3(0.0, 2.0, 0.0)), viking_tex);
+		let room4 = vh::InstanceData::new(glm::translate(&glm::Mat4::identity(), &glm::vec3(-2.0, 2.0, 0.0)), viking_tex);
+		let room5 = vh::InstanceData::new(glm::translate(&glm::Mat4::identity(), &glm::vec3(2.0, 2.0, 0.0)), viking_tex);
+		vh::add_instances(&mut data, room_model, vec![room, room1, room2, room3, room4, room5])?;
 
+		let earth = vh::InstanceData::new(glm::translate(&glm::Mat4::identity(), &glm::vec3(0.0, -2.0, 0.0)), moon_tex);
+		let earth1 = vh::InstanceData::new(glm::translate(&glm::Mat4::identity(), &glm::vec3(2.0, -2.0, 0.0)), earth_tex);
+		let earth2 = vh::InstanceData::new(glm::translate(&glm::Mat4::identity(), &glm::vec3(-2.0, -2.0, 0.0)), earth_tex);
+		vh::add_instances(&mut data, planet_model, vec![earth, earth1, earth2])?;
 
-		vh::create_instance_buffers(&instance, &device, &mut data)?;
+		vh::create_instance_buffer(&instance, &device, &mut data)?;
 		vh::create_vertex_buffer(&instance, &device, &mut data)?;
 		vh::create_index_buffer(&instance, &device, &mut data)?;
 

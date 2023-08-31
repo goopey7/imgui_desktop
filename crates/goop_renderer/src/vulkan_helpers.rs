@@ -54,11 +54,11 @@ pub mod vh
 		image_available_semaphores: Vec<vk::Semaphore>,
 		render_finished_semaphores: Vec<vk::Semaphore>,
 		images_in_flight: Vec<vk::Fence>,
-		instances: Vec<Option<Vec<InstanceData>>>,
+		instances: Vec<InstanceData>,
 		vertices: Vec<Vertex>,
 		indices: Vec<u32>,
-		instance_buffers: Vec<Option<vk::Buffer>>,
-		instance_buffer_memories: Vec<Option<vk::DeviceMemory>>,
+		instance_buffer: vk::Buffer,
+		instance_buffer_memory: vk::DeviceMemory,
 		vertex_buffer: vk::Buffer,
 		vertex_buffer_memory: vk::DeviceMemory,
 		index_buffer: vk::Buffer,
@@ -79,6 +79,8 @@ pub mod vh
 		messenger: Option<vk::DebugUtilsMessengerEXT>,
 		index_offsets: Vec<u32>,
 		model_count: u32,
+		instance_offsets: Vec<Option<u32>>,
+		instance_count: Vec<u32>,
 	}
 
 	#[derive(Copy, Clone, Debug)]
@@ -1540,60 +1542,46 @@ pub mod vh
 		Ok(())
 	}
 
-	pub fn create_instance_buffers(instance: &ash::Instance, device: &ash::Device, data: &mut Data) -> Result<()>
+	pub fn create_instance_buffer(instance: &ash::Instance, device: &ash::Device, data: &mut Data) -> Result<()>
 	{
-		for model_index in 0..data.index_offsets.len() - 1
-		{
-			let instances = &data.instances[model_index as usize];
+		let size = (size_of::<InstanceData>() * data.instances.len()) as u64;
 
-			if instances.is_none()
-			{
-				data.instance_buffers.push(None);
-				data.instance_buffer_memories.push(None);
-				continue;
-			}
+		unsafe {
+			let (staging_buffer, staging_buffer_memory) = create_buffer(
+				instance,
+				device,
+				data,
+				size,
+				vk::BufferUsageFlags::TRANSFER_SRC,
+				vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
+			)?;
 
-			let instances = instances.as_ref().unwrap();
-
-			let size = (size_of::<InstanceData>() * instances.len()) as u64;
-
-			unsafe {
-				let (staging_buffer, staging_buffer_memory) = create_buffer(
-					instance,
-					device,
-					data,
-					size,
-					vk::BufferUsageFlags::TRANSFER_SRC,
-					vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
+			let memory = device.map_memory(
+				staging_buffer_memory,
+				0,
+				size,
+				vk::MemoryMapFlags::empty()
 				)?;
 
-				let memory = device.map_memory(
-					staging_buffer_memory,
-					0,
-					size,
-					vk::MemoryMapFlags::empty()
-					)?;
+				memcpy(data.instances.as_ptr(), memory.cast(), data.instances.len());
+				device.unmap_memory(staging_buffer_memory);
 
-					memcpy(instances.as_ptr(), memory.cast(), instances.len());
-					device.unmap_memory(staging_buffer_memory);
+			let (instance_buffer, instance_buffer_memory) = create_buffer(
+				instance,
+				device,
+				data,
+				size,
+				vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::VERTEX_BUFFER,
+				vk::MemoryPropertyFlags::DEVICE_LOCAL,
+			)?;
 
-				let (instance_buffer, instance_buffer_memory) = create_buffer(
-					instance,
-					device,
-					data,
-					size,
-					vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::VERTEX_BUFFER,
-					vk::MemoryPropertyFlags::DEVICE_LOCAL,
-				)?;
+			data.instance_buffer = instance_buffer;
+			data.instance_buffer_memory = instance_buffer_memory;
 
-				data.instance_buffers.push(Some(instance_buffer));
-				data.instance_buffer_memories.push(Some(instance_buffer_memory));
+			copy_buffer(device, data, staging_buffer, instance_buffer, size)?;
 
-				copy_buffer(device, data, staging_buffer, instance_buffer, size)?;
-
-				device.destroy_buffer(staging_buffer, None);
-				device.free_memory(staging_buffer_memory, None);
-			}
+			device.destroy_buffer(staging_buffer, None);
+			device.free_memory(staging_buffer_memory, None);
 		}
 
 		Ok(())
@@ -2010,17 +1998,20 @@ pub mod vh
 
 	pub fn prep_instances(data: &mut Data) -> Result<()>
 	{
-		for _ in 0..data.model_count
-		{
-			data.instances.push(None);
-		}
-
+		data.instance_offsets = vec![None; data.model_count as usize];
+		data.instance_count = vec![0; data.model_count as usize];
 		Ok(())
 	}
 
-	pub fn load_instances(data: &mut Data, model_index: usize, instances: Vec<InstanceData>) -> Result<()>
+	pub fn add_instances(data: &mut Data, model_index: usize, instances: Vec<InstanceData>) -> Result<()>
 	{
-		data.instances[model_index] = Some(instances);
+		if data.instance_offsets[model_index].is_some()
+		{
+			panic!("Model already has instances");
+		}
+		data.instance_offsets[model_index] = Some(data.instances.len() as u32);
+		instances.iter().for_each(|i| data.instances.push(*i));
+		data.instance_count[model_index] = instances.len() as u32;
 		Ok(())
 	}
 
@@ -2236,19 +2227,24 @@ pub mod vh
 				&opacity.to_ne_bytes()[..],
 			);
 
-			for i in 0..data.instances.len()
-			{
-				let instance_data = data.instance_buffers[i];
+			device.cmd_bind_vertex_buffers(cb, 1, &[data.instance_buffer], &[0]);
 
-				if instance_data.is_none()
+			for i in 0..data.model_count
+			{
+				let i = i as usize;
+				if data.instance_offsets[i].is_none()
 				{
 					continue;
 				}
-
-				let instance_data = instance_data.unwrap();
-
-				device.cmd_bind_vertex_buffers(cb, 1, &[instance_data], &[0]);
-				device.cmd_draw_indexed(cb, data.index_offsets[i + 1] - data.index_offsets[i], 2, data.index_offsets[i], 0, 0);
+				let instance_offset = data.instance_offsets[i].unwrap() as u32;
+				device.cmd_draw_indexed(
+					cb,
+					data.index_offsets[i + 1] - data.index_offsets[i],
+					data.instance_count[i],
+					data.index_offsets[i],
+					0,
+					instance_offset,
+				);
 			}
 
 			#[cfg(feature = "goop_imgui")]
