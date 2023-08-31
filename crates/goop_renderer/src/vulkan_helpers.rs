@@ -1963,7 +1963,7 @@ pub mod vh
 		Ok(())
 	}
 
-	pub fn load_vertics(data: &mut Data, vertices: Vec<glm::Vec3>, indices: Vec<u32>, colors: Option<Vec<glm::Vec3>>, tex_coords: Option<Vec<glm::Vec2>>) -> Result<()>
+	pub fn load_vertics(data: &mut Data, vertices: Vec<glm::Vec3>, indices: Vec<u32>, colors: Option<Vec<glm::Vec3>>, tex_coords: Option<Vec<glm::Vec2>>) -> Result<usize>
 	{
 		let mut unique_vertices = HashMap::new();
 
@@ -1993,7 +1993,9 @@ pub mod vh
 			}
 		}
 
-		Ok(())
+		data.index_offsets.push(data.indices.len() as u32);
+		data.model_count += 1;
+		Ok((data.model_count - 1) as usize)
 	}
 
 	pub fn prep_instances(data: &mut Data) -> Result<()>
