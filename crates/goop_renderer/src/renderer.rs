@@ -112,7 +112,7 @@ impl Renderer
 		let large_pm = vh::load_model(&mut data, "media/models/largeSphere.obj")?;
 		let room_model = vh::load_model(&mut data, "media/models/viking_room.obj")?;
 
-		let traingle_verts = vec![glm::vec3(0.0, 1.0, 0.0), glm::vec3(1.0, 0.0, 0.0), glm::vec3(-1.0, 0.0, 0.0)];
+		let traingle_verts = vec![glm::vec3(0.0, 0.0, 1.0), glm::vec3(1.0, 0.0, 0.0), glm::vec3(-1.0, 0.0, 0.0)];
 		let triangle_indices = vec![0, 1, 2];
 		let tri = vh::load_vertics(&mut data, traingle_verts, triangle_indices, None, None)?;
 

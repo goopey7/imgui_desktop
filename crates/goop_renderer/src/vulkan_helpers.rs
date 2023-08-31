@@ -830,7 +830,7 @@ pub mod vh
 		let rasterizer_info = vk::PipelineRasterizationStateCreateInfo::builder()
 			.line_width(1.0)
 			.front_face(vk::FrontFace::CLOCKWISE)
-			.cull_mode(vk::CullModeFlags::BACK)
+			.cull_mode(vk::CullModeFlags::NONE)
 			.polygon_mode(if !data.wireframe { vk::PolygonMode::FILL } else { vk::PolygonMode::LINE });
 
 		let multisampler_info = vk::PipelineMultisampleStateCreateInfo::builder()
