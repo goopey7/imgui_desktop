@@ -18,6 +18,7 @@ layout(location=0) out vec4 outColor;
 // called for every fragment (which was output from the vertex shader)
 void main()
 {
-	outColor = vec4(texture(texSamplers[fragTexId], fragTexCoord).rgb, pcs.opacity);
+	//outColor = vec4(texture(texSamplers[fragTexId], fragTexCoord).rgb, pcs.opacity);
+	outColor = vec4(texture(texSamplers[fragTexId], fragTexCoord).rgb, 1.0f);
 }
 

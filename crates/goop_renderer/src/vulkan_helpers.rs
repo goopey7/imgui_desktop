@@ -54,11 +54,11 @@ pub mod vh
 		image_available_semaphores: Vec<vk::Semaphore>,
 		render_finished_semaphores: Vec<vk::Semaphore>,
 		images_in_flight: Vec<vk::Fence>,
-		instances: Vec<InstanceData>,
+		instances: Vec<Vec<InstanceData>>,
 		vertices: Vec<Vertex>,
 		indices: Vec<u32>,
-		instance_buffer: vk::Buffer,
-		instance_buffer_memory: vk::DeviceMemory,
+		instance_buffers: Vec<vk::Buffer>,
+		instance_buffer_memories: Vec<vk::DeviceMemory>,
 		vertex_buffer: vk::Buffer,
 		vertex_buffer_memory: vk::DeviceMemory,
 		index_buffer: vk::Buffer,
@@ -77,6 +77,7 @@ pub mod vh
 		color_image_view: vk::ImageView,
 		debug_utils: Option<ash::extensions::ext::DebugUtils>,
 		messenger: Option<vk::DebugUtilsMessengerEXT>,
+		index_offsets: Vec<u32>,
 	}
 
 	#[derive(Copy, Clone, Debug)]
@@ -1263,11 +1264,8 @@ pub mod vh
 		let mut mip_levels = (width.max(height) as f32).log2().floor() as u32 + 1;
 
 		log::info!("Texture {} loaded", image_path);
-		log::info!("Creating texture image: {} {} {}", width, height, mip_levels);
 		let (image, image_memory) = create_texture_image(instance, device, data, size, &mut pixels, &mut mip_levels, width, height)?;
-		log::info!("Creating texture image view");
 		let image_view = create_texture_image_view(device, data, image, mip_levels)?;
-		log::info!("Creating texture sampler");
 		let sampler = create_texture_sampler(device, mip_levels)?;
 
 		data.textures.push(Texture { image, image_memory, image_view, sampler });
@@ -1533,46 +1531,58 @@ pub mod vh
 		Ok(())
 	}
 
-	pub fn create_instance_buffer(instance: &ash::Instance, device: &ash::Device, data: &mut Data) -> Result<()>
+	pub fn create_instance_buffers(instance: &ash::Instance, device: &ash::Device, data: &mut Data) -> Result<()>
 	{
-		let size = (size_of::<InstanceData>() * data.instances.len()) as u64;
+		for model_index in 0..data.index_offsets.len() - 1
+		{
+			let instances = data.instances.get(model_index as usize);
 
-		unsafe {
-			let (staging_buffer, staging_buffer_memory) = create_buffer(
-				instance,
-				device,
-				data,
-				size,
-				vk::BufferUsageFlags::TRANSFER_SRC,
-				vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
-			)?;
+			if instances.is_none()
+			{
+				continue;
+			}
 
-			let memory = device.map_memory(
-				staging_buffer_memory,
-				0,
-				size,
-				vk::MemoryMapFlags::empty()
+			let instances = instances.unwrap();
+
+			let size = (size_of::<InstanceData>() * instances.len()) as u64;
+
+			unsafe {
+				let (staging_buffer, staging_buffer_memory) = create_buffer(
+					instance,
+					device,
+					data,
+					size,
+					vk::BufferUsageFlags::TRANSFER_SRC,
+					vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
 				)?;
 
-				memcpy(data.instances.as_ptr(), memory.cast(), data.instances.len());
-				device.unmap_memory(staging_buffer_memory);
+				let memory = device.map_memory(
+					staging_buffer_memory,
+					0,
+					size,
+					vk::MemoryMapFlags::empty()
+					)?;
 
-			let (instance_buffer, instance_buffer_memory) = create_buffer(
-				instance,
-				device,
-				data,
-				size,
-				vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::VERTEX_BUFFER,
-				vk::MemoryPropertyFlags::DEVICE_LOCAL,
-			)?;
+					memcpy(data.instances[model_index as usize].as_ptr(), memory.cast(), data.instances[model_index as usize].len());
+					device.unmap_memory(staging_buffer_memory);
 
-			data.instance_buffer = instance_buffer;
-			data.instance_buffer_memory = instance_buffer_memory;
+				let (instance_buffer, instance_buffer_memory) = create_buffer(
+					instance,
+					device,
+					data,
+					size,
+					vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::VERTEX_BUFFER,
+					vk::MemoryPropertyFlags::DEVICE_LOCAL,
+				)?;
 
-			copy_buffer(device, data, staging_buffer, instance_buffer, size)?;
+				data.instance_buffers.push(instance_buffer);
+				data.instance_buffer_memories.push(instance_buffer_memory);
 
-			device.destroy_buffer(staging_buffer, None);
-			device.free_memory(staging_buffer_memory, None);
+				copy_buffer(device, data, staging_buffer, instance_buffer, size)?;
+
+				device.destroy_buffer(staging_buffer, None);
+				device.free_memory(staging_buffer_memory, None);
+			}
 		}
 
 		Ok(())
@@ -1954,19 +1964,35 @@ pub mod vh
 		Ok(())
 	}
 
-	pub fn load_model(data: &mut Data) -> Result<()>
+	pub fn load_model(data: &mut Data, model_path: &str) -> Result<()>
 	{
-		data.instances.push(
-			InstanceData { transform: glm::identity(), texture_id: 3 }
-		);
+		// TODO place this somewhere else
+		if data.index_offsets.is_empty()
+		{
+			// PLANETS
+			data.instances.push(
+			vec![
+					InstanceData { transform: glm::identity(), texture_id: 0, },
+					InstanceData { transform: glm::translate(&glm::identity(), &glm::vec3(3.0,0.0,0.0)),
+					texture_id: 1,
+					}
+				],
+			);
 
-		data.instances.push(
-			InstanceData { transform: glm::translate(&glm::identity(), &glm::vec3(3.0,0.0,0.0)),
-			texture_id: 1,
-			}
-		);
+			// HOUSES
+			data.instances.push(
+			vec![
+					InstanceData { transform: glm::identity(), texture_id: 3, },
+					InstanceData { transform: glm::translate(&glm::identity(), &glm::vec3(3.0,0.0,0.0)),
+					texture_id: 0,
+					}
+				]
+			);
 
-		let mut reader = BufReader::new(File::open("media/models/smallSphere.obj")?);
+			data.index_offsets.push(0);
+		}
+
+		let mut reader = BufReader::new(File::open(model_path)?);
 
 		let (models, _) = tobj::load_obj_buf(
 			&mut reader,
@@ -2009,6 +2035,7 @@ pub mod vh
 				}
 			}
 		}
+		data.index_offsets.push(data.indices.len() as u32);
 		Ok(())
 	}
 
@@ -2145,7 +2172,6 @@ pub mod vh
 			device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, data.pipeline);
 					
 			device.cmd_bind_vertex_buffers(cb, 0, &[data.vertex_buffer], &[0]);
-			device.cmd_bind_vertex_buffers(cb, 1, &[data.instance_buffer], &[0]);
 			device.cmd_bind_index_buffer(cb, data.index_buffer, 0, vk::IndexType::UINT32);
 			device.cmd_bind_descriptor_sets(
 				cb,
@@ -2169,7 +2195,13 @@ pub mod vh
 				64,
 				&opacity.to_ne_bytes()[..],
 			);
-			device.cmd_draw_indexed(cb, data.indices.len() as u32, 2, 0, 0, 0);
+
+			for i in 0..data.instances.len()
+			{
+				let instance_data = data.instance_buffers[i];
+				device.cmd_bind_vertex_buffers(cb, 1, &[instance_data], &[0]);
+				device.cmd_draw_indexed(cb, data.index_offsets[i + 1] - data.index_offsets[i], 2, data.index_offsets[i], 0, 0);
+			}
 
 			#[cfg(feature = "goop_imgui")]
 			renderer.cmd_draw(cb, draw_data)?;

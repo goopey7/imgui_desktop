@@ -107,8 +107,10 @@ impl Renderer
 		vh::create_descriptor_sets(&device, &mut data)?;
 		vh::create_command_buffers(&device, &mut data)?;
 		vh::create_sync_objects(&device, &mut data)?;
-		vh::load_model(&mut data)?;
-		vh::create_instance_buffer(&instance, &device, &mut data)?;
+		vh::load_model(&mut data, "media/models/smallSphere.obj")?;
+		vh::load_model(&mut data, "media/models/viking_room.obj")?;
+		vh::load_model(&mut data, "media/models/largeSphere.obj")?;
+		vh::create_instance_buffers(&instance, &device, &mut data)?;
 		vh::create_vertex_buffer(&instance, &device, &mut data)?;
 		vh::create_index_buffer(&instance, &device, &mut data)?;
 
