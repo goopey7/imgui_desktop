@@ -1262,8 +1262,12 @@ pub mod vh
 
 		let mut mip_levels = (width.max(height) as f32).log2().floor() as u32 + 1;
 
+		log::info!("Texture {} loaded", image_path);
+		log::info!("Creating texture image: {} {} {}", width, height, mip_levels);
 		let (image, image_memory) = create_texture_image(instance, device, data, size, &mut pixels, &mut mip_levels, width, height)?;
+		log::info!("Creating texture image view");
 		let image_view = create_texture_image_view(device, data, image, mip_levels)?;
+		log::info!("Creating texture sampler");
 		let sampler = create_texture_sampler(device, mip_levels)?;
 
 		data.textures.push(Texture { image, image_memory, image_view, sampler });
@@ -1712,7 +1716,7 @@ pub mod vh
 
 		let sampler_size = vk::DescriptorPoolSize::builder()
 			.ty(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-			.descriptor_count(2 * data.swapchain_images.len() as u32);
+			.descriptor_count(data.textures.len() as u32 * data.swapchain_images.len() as u32);
 
 		let pool_sizes = &[*ubo_size, *sampler_size];
 		let info = vk::DescriptorPoolCreateInfo::builder()
@@ -1786,7 +1790,7 @@ pub mod vh
 		let sampler_binding = vk::DescriptorSetLayoutBinding::builder()
 			.binding(1)
 			.descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-			.descriptor_count(2)
+			.descriptor_count(data.textures.len() as u32)
 			.stage_flags(vk::ShaderStageFlags::FRAGMENT);
 
 		let bindings = &[*ubo_binding, *sampler_binding];
@@ -1953,7 +1957,7 @@ pub mod vh
 	pub fn load_model(data: &mut Data) -> Result<()>
 	{
 		data.instances.push(
-			InstanceData { transform: glm::identity(), texture_id: 0 }
+			InstanceData { transform: glm::identity(), texture_id: 3 }
 		);
 
 		data.instances.push(

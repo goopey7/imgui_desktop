@@ -89,20 +89,24 @@ impl Renderer
 		vh::create_swapchain(&instance, &device, &surface, window, &mut data)?;
 		vh::create_swapchain_image_views(&device, &mut data)?;
 		vh::create_render_pass(&instance, &device, &mut data)?;
+		vh::create_command_pools(&instance, &device, &surface, &mut data)?;
+
+		vh::add_texture(&instance, &device, &mut data, "media/textures/earth.png")?;
+		vh::add_texture(&instance, &device, &mut data, "media/textures/moon.png")?;
+		vh::add_texture(&instance, &device, &mut data, "media/textures/earth.png")?;
+		vh::add_texture(&instance, &device, &mut data, "media/textures/viking_room.png")?;
+		vh::add_texture(&instance, &device, &mut data, "media/textures/moon.png")?;
+
 		vh::create_descriptor_set_layout(&device, &mut data)?;
 		vh::create_pipeline(&device, &mut data)?;
-		vh::create_command_pools(&instance, &device, &surface, &mut data)?;
 		vh::create_color_objects(&instance, &device, &mut data)?;
 		vh::create_depth_objects(&instance, &device, &mut data)?;
 		vh::create_framebuffers(&device, &mut data)?;
-		vh::add_texture(&instance, &device, &mut data, "media/textures/earth.png")?;
-		vh::add_texture(&instance, &device, &mut data, "media/textures/moon.png")?;
 		vh::create_uniform_buffers(&instance, &device, &mut data)?;
 		vh::create_descriptor_pool(&device, &mut data)?;
 		vh::create_descriptor_sets(&device, &mut data)?;
 		vh::create_command_buffers(&device, &mut data)?;
 		vh::create_sync_objects(&device, &mut data)?;
-
 		vh::load_model(&mut data)?;
 		vh::create_instance_buffer(&instance, &device, &mut data)?;
 		vh::create_vertex_buffer(&instance, &device, &mut data)?;
