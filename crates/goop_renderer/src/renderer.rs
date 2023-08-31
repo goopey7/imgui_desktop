@@ -23,6 +23,8 @@ pub struct Renderer
 
 	#[cfg(feature = "goop_imgui")]
     pub imgui_renderer: imgui_rs_vulkan_renderer::Renderer,
+
+	zoom: f32,
 }
 
 impl Renderer
@@ -74,6 +76,7 @@ impl Renderer
 			surface,
 			data,
 			imgui_renderer,
+			zoom: 8.0,
 		})
 	}
 
@@ -112,7 +115,7 @@ impl Renderer
 		let large_pm = vh::load_model(&mut data, "media/models/largeSphere.obj")?;
 		let room_model = vh::load_model(&mut data, "media/models/viking_room.obj")?;
 
-		let traingle_verts = vec![glm::vec3(0.0, 0.0, 1.0), glm::vec3(1.0, 0.0, 0.0), glm::vec3(-1.0, 0.0, 0.0)];
+		let traingle_verts = vec![glm::vec3(0.0, -1.0, 0.0), glm::vec3(1.0, 0.0, 0.0), glm::vec3(-1.0, 0.0, 0.0)];
 		let triangle_indices = vec![0, 1, 2];
 		let tri = vh::load_vertics(&mut data, traingle_verts, triangle_indices, None, None)?;
 
@@ -122,12 +125,13 @@ impl Renderer
 		let moon = vh::InstanceData::new(glm::Mat4::identity(), moon_tex);
 		//vh::load_instances(&mut data, planet_model, vec![moon])?;
 
-		let room = vh::InstanceData::new(glm::translate(&glm::Mat4::identity(), &glm::vec3(2.0, 0.0, 0.0)), viking_tex);
-		let room1 = vh::InstanceData::new(glm::translate(&glm::Mat4::identity(), &glm::vec3(-2.0, 0.0, 0.0)), viking_tex);
-		let room2 = vh::InstanceData::new(glm::translate(&glm::Mat4::identity(), &glm::vec3(0.0, 0.0, 0.0)), viking_tex);
-		let room3 = vh::InstanceData::new(glm::translate(&glm::Mat4::identity(), &glm::vec3(0.0, 2.0, 0.0)), viking_tex);
-		let room4 = vh::InstanceData::new(glm::translate(&glm::Mat4::identity(), &glm::vec3(-2.0, 2.0, 0.0)), viking_tex);
-		let room5 = vh::InstanceData::new(glm::translate(&glm::Mat4::identity(), &glm::vec3(2.0, 2.0, 0.0)), viking_tex);
+		let rotation = glm::rotate(&glm::Mat4::identity(), glm::radians(&glm::vec1(90.0))[0], &glm::vec3(1.0, 0.0, 0.0));
+		let room = vh::InstanceData::new(glm::translate(&rotation, &glm::vec3(2.0, 0.0, 0.0)), viking_tex);
+		let room1 = vh::InstanceData::new(glm::translate(&rotation, &glm::vec3(-2.0, 0.0, 0.0)), viking_tex);
+		let room2 = vh::InstanceData::new(glm::translate(&rotation, &glm::vec3(0.0, 0.0, 0.0)), viking_tex);
+		let room3 = vh::InstanceData::new(glm::translate(&rotation, &glm::vec3(0.0, 0.0, -2.0)), viking_tex);
+		let room4 = vh::InstanceData::new(glm::translate(&rotation, &glm::vec3(-2.0, 0.0, -2.0)), viking_tex);
+		let room5 = vh::InstanceData::new(glm::translate(&rotation, &glm::vec3(2.0, 0.0, -2.0)), viking_tex);
 		vh::add_instances(&mut data, room_model, vec![room, room1, room2, room3, room4, room5])?;
 
 		let earth = vh::InstanceData::new(glm::translate(&glm::Mat4::identity(), &glm::vec3(0.0, -2.0, 0.0)), moon_tex);
@@ -182,6 +186,13 @@ impl Renderer
 		}
 		);
 
+		ui.window("Camera Controls")
+			.size([200.0, 100.0], Condition::FirstUseEver)
+			.build(|| {
+				ui.text("Zoom");
+				ui.slider::<String, f32>("zoom".to_string(), 0.0, 100.0, &mut self.zoom);
+			});
+
 		platform.prepare_render(&ui, &window);
 		let draw_data = imgui.render();
 
@@ -194,6 +205,7 @@ impl Renderer
 			&start,
 			&mut self.imgui_renderer,
 			&draw_data,
+			self.zoom,
 		).unwrap();
 	}
 

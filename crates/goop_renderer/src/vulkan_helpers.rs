@@ -1849,10 +1849,10 @@ pub mod vh
 		Ok(())
 	}
 
-	fn update_uniform_buffer(device: &ash::Device, image_index: usize, data: &Data) -> Result<()>
+	fn update_uniform_buffer(device: &ash::Device, image_index: usize, data: &Data, zoom: f32) -> Result<()>
 	{
 		let view = glm::look_at(
-			&glm::vec3(0.0,0.0,8.0),
+			&glm::vec3(0.0,0.0,zoom),
 			&glm::vec3(0.0,0.0,0.0),
 			&glm::vec3(0.0,1.0,0.0),
 		);
@@ -2156,14 +2156,8 @@ pub mod vh
 
 		let model = glm::rotate(
 			&glm::Mat4::identity(),
-			glm::radians(&glm::vec1(90.0))[0],
-			&glm::vec3(1.0, 0.0, 0.0),
-		);
-
-		let model = glm::rotate(
-			&model,
-			time,
-			&glm::vec3(0.0, 0.0, 1.0),
+			time * glm::radians(&glm::vec1(90.0))[0],
+			&glm::vec3(0.0, 1.0, 0.0),
 		);
 
 		let (_, model_bytes, _) = unsafe { model.as_slice().align_to::<u8>() };
@@ -2279,6 +2273,7 @@ pub mod vh
 		renderer: &mut imgui_rs_vulkan_renderer::Renderer,
 		#[cfg(feature = "goop_imgui")]
 		draw_data: &imgui::DrawData,
+		zoom: f32,
 		) -> Result<()>
 	{
 		let swapchain_loader = data.swapchain_loader.clone().unwrap();
@@ -2318,7 +2313,7 @@ pub mod vh
 			#[cfg(feature = "goop_imgui")]
 			&draw_data,
 		)?;
-		update_uniform_buffer(device, image_index, data)?;
+		update_uniform_buffer(device, image_index, data, zoom)?;
 
 		let wait_semaphores = &[data.image_available_semaphores[data.frame]];
 		let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
