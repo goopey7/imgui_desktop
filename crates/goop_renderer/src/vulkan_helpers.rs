@@ -1967,8 +1967,10 @@ pub mod vh
 	{
 		let mut unique_vertices = HashMap::new();
 
-		for index in indices
+		for i in 0..indices.len()
 		{
+			let index = indices[i];
+
 			// TODO eww
 			let colors = colors.clone().unwrap_or(vec![glm::vec3(1.0,1.0,1.0); vertices.len()]);
 			let tex_coords = tex_coords.clone().unwrap_or(vec![glm::vec2(0.0,0.0); vertices.len()]);
@@ -1977,7 +1979,7 @@ pub mod vh
 			{
 				pos: vertices[index as usize],
 				color: colors[index as usize],
-				tex_coord: tex_coords[index as usize],
+				tex_coord: tex_coords[i],
 			};
 
 			if let Some(index) = unique_vertices.get(&vertex)
