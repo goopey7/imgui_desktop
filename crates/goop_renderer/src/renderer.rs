@@ -20,11 +20,14 @@ pub struct Renderer
 	device: ash::Device,
 	surface: ash::extensions::khr::Surface,
 	data: Data,
+	camera_eye: glm::Vec3,
+	camera_forward: glm::Vec3,
+	camera_up: glm::Vec3,
+	camera_rotation: glm::Vec3,
+	cursor_visible: bool,
 
 	#[cfg(feature = "goop_imgui")]
     pub imgui_renderer: imgui_rs_vulkan_renderer::Renderer,
-
-	zoom: f32,
 }
 
 impl Renderer
@@ -76,8 +79,17 @@ impl Renderer
 			surface,
 			data,
 			imgui_renderer,
-			zoom: 8.0,
+			camera_eye: glm::vec3(0.0, 0.0, 0.0),
+			camera_forward: glm::vec3(0.0, 0.0, 0.0),
+			camera_up: glm::vec3(0.0, 1.0, 0.0),
+			camera_rotation: glm::vec3(0.0, 0.0, 0.0),
+			cursor_visible: true,
 		})
+	}
+
+	pub fn cursor_visible(&self) -> bool
+	{
+		self.cursor_visible
 	}
 
 	fn init_renderer(window: &Window, app_name: &str) -> Result<(ash::Entry, ash::Instance, ash::extensions::khr::Surface, ash::Device, Data)>
@@ -133,8 +145,7 @@ impl Renderer
 		let room = vh::InstanceData::new(glm::translate(&rotation, &glm::vec3(2.0, 0.0, 0.0)), viking_tex);
 		let room1 = vh::InstanceData::new(glm::translate(&rotation, &glm::vec3(-2.0, 0.0, 0.0)), viking_tex);
 		let room2 = vh::InstanceData::new(glm::translate(&rotation, &glm::vec3(0.0, 0.0, 0.0)), viking_tex);
-		let room3 = vh::InstanceData::new(glm::translate(&rotation, &glm::vec3(0.0, 0.0, -2.0)), viking_tex);
-		vh::add_instances(&mut data, room_model, vec![room, room1, room2, room3])?;
+		vh::add_instances(&mut data, room_model, vec![room, room1, room2])?;
 
 		let earth = vh::InstanceData::new(glm::translate(&glm::Mat4::identity(), &glm::vec3(0.0, -2.0, 0.0)), moon_tex);
 		let earth1 = vh::InstanceData::new(glm::translate(&glm::Mat4::identity(), &glm::vec3(2.0, -2.0, 0.0)), earth_tex);
@@ -188,11 +199,32 @@ impl Renderer
 		}
 		);
 
-		ui.window("Camera Controls")
+		ui.window("Camera Info")
 			.size([200.0, 100.0], Condition::FirstUseEver)
 			.build(|| {
-				ui.text("Zoom");
-				ui.slider::<String, f32>("zoom".to_string(), 0.0, 100.0, &mut self.zoom);
+				ui.spacing();
+				ui.text("Rotation");
+				ui.text(format!("Pitch: {:.1}", self.camera_rotation.x));
+				ui.text(format!("Yaw: {:.1}", self.camera_rotation.y));
+				ui.text(format!("Roll: {:.1}", self.camera_rotation.z));
+
+				ui.spacing();
+				ui.text("Position");
+				ui.text(format!("X: {:.1}", self.camera_eye.x));
+				ui.text(format!("Y: {:.1}", self.camera_eye.y));
+				ui.text(format!("Z: {:.1}", self.camera_eye.z));
+
+				ui.spacing();
+				ui.text("Forward");
+				ui.text(format!("X: {:.1}", self.camera_forward.x));
+				ui.text(format!("Y: {:.1}", self.camera_forward.y));
+				ui.text(format!("Z: {:.1}", self.camera_forward.z));
+
+				ui.spacing();
+				ui.text("Up");
+				ui.text(format!("X: {:.1}", self.camera_up.x));
+				ui.text(format!("Y: {:.1}", self.camera_up.y));
+				ui.text(format!("Z: {:.1}", self.camera_up.z));
 			});
 
 		platform.prepare_render(&ui, &window);
@@ -207,7 +239,9 @@ impl Renderer
 			&start,
 			&mut self.imgui_renderer,
 			&draw_data,
-			self.zoom,
+			self.camera_eye,
+			self.camera_forward,
+			self.camera_up,
 		).unwrap();
 	}
 
@@ -226,6 +260,38 @@ impl Renderer
 			&mut self.data,
 		).unwrap();
 	}
+
+	pub fn move_camera_right(&mut self)
+	{
+		self.camera_eye += glm::normalize(&glm::cross(&self.camera_forward, &self.camera_up));
+	}
+
+	pub fn move_camera_left(&mut self)
+	{
+		self.camera_eye -= glm::normalize(&glm::cross(&self.camera_forward, &self.camera_up));
+	}
+
+	pub fn move_camera_backward(&mut self)
+	{
+		self.camera_eye -= self.camera_forward;
+	}
+
+	pub fn move_camera_forward(&mut self)
+	{
+		self.camera_eye += self.camera_forward;
+	}
+
+	pub fn update_camera_rotation(&mut self, rotation: glm::Vec3)
+	{
+		self.camera_rotation += rotation;
+
+		let (cos_p, cos_y, cos_r) = (self.camera_rotation.x.to_radians().cos(), self.camera_rotation.y.to_radians().cos(), self.camera_rotation.z.to_radians().cos());
+		let (sin_p, sin_y, sin_r) = (self.camera_rotation.x.to_radians().sin(), self.camera_rotation.y.to_radians().sin(), self.camera_rotation.z.to_radians().sin());
+
+		self.camera_forward = glm::vec3(sin_y * cos_p, sin_p, cos_p * -cos_y);
+		self.camera_forward = self.camera_forward.normalize();
+	}
+
 }
 
 impl Drop for Renderer

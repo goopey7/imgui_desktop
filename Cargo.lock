@@ -506,6 +506,7 @@ dependencies = [
  "imgui",
  "imgui-winit-support",
  "log",
+ "nalgebra-glm",
  "pretty_env_logger",
  "raw-window-handle 0.5.2",
  "winit",

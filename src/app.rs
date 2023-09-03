@@ -6,9 +6,10 @@ use winit::
 	event_loop::{EventLoop, ControlFlow},
 	window::{Window, WindowBuilder},
 	dpi::LogicalSize,
-	event::{Event, WindowEvent, VirtualKeyCode}
+	event::{Event, WindowEvent, VirtualKeyCode, DeviceEvent}
 };
 use anyhow::Result;
+use nalgebra_glm as glm;
 
 use goop_renderer::renderer::Renderer;
 pub struct App
@@ -87,16 +88,42 @@ impl App
 						self.renderer.resize();
 					}
 				},
-				// Handle Input
-				Event::WindowEvent {event: WindowEvent::KeyboardInput { input, .. }, .. } =>
+				// Mouse Input
+				Event::DeviceEvent {event: DeviceEvent::MouseMotion { delta }, .. } =>
 				{
-					if let Some(keycode) = input.virtual_keycode
+					let (dx, dy) = delta;
+					let (dx, dy) = ((dx / 20.0) as f32, (dy / 20.0) as f32);
+					self.renderer.update_camera_rotation(glm::vec3(dy, dx, 0.0))
+				},
+				Event::DeviceEvent {event: DeviceEvent::Key (input), .. } =>
+				{
+					if let Some(key) = input.virtual_keycode
 					{
 						if input.state == winit::event::ElementState::Pressed
 						{
-							if keycode == VirtualKeyCode::R
+							if key == VirtualKeyCode::R
 							{
 								self.renderer.toggle_wireframe(&self.window);
+							}
+							if key == VirtualKeyCode::Tab
+							{
+								self.window.set_cursor_visible(!self.renderer.cursor_visible());
+							}
+							if key == VirtualKeyCode::W
+							{
+								self.renderer.move_camera_forward();
+							}
+							if key == VirtualKeyCode::S
+							{
+								self.renderer.move_camera_backward();
+							}
+							if key == VirtualKeyCode::A
+							{
+								self.renderer.move_camera_left();
+							}
+							if key == VirtualKeyCode::D
+							{
+								self.renderer.move_camera_right();
 							}
 						}
 					}
