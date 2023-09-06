@@ -24,7 +24,7 @@ pub struct Renderer
 	camera_forward: glm::Vec3,
 	camera_up: glm::Vec3,
 	camera_rotation: glm::Vec3,
-	cursor_visible: bool,
+	pub cursor_visible: bool,
 
 	#[cfg(feature = "goop_imgui")]
     pub imgui_renderer: imgui_rs_vulkan_renderer::Renderer,
