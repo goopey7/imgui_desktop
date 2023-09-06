@@ -302,6 +302,12 @@ impl Renderer
 
 		self.camera_forward = glm::vec3(sin_y * cos_p, sin_p, cos_p * -cos_y);
 		self.camera_forward = self.camera_forward.normalize();
+
+		self.camera_up = glm::vec3(
+			-cos_y * sin_r - sin_y * sin_p * cos_r,
+			cos_p * cos_r,
+			-sin_y * sin_r - sin_p * cos_r * -cos_y,
+		);
 	}
 
 }
