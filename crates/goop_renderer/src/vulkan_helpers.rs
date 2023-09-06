@@ -1857,14 +1857,14 @@ pub mod vh
 			&camera_up,
 		);
 
-		let proj = glm::perspective_rh_zo(
+		let mut proj = glm::perspective_rh_zo(
 			data.swapchain_extent.width as f32 / data.swapchain_extent.height as f32,
 			glm::radians(&glm::vec1(45.0))[0],
 			0.1,
 			100.0,
 		);
 
-		//proj[(1,1)] *= -1.0;
+		proj[(1,1)] *= -1.0;
 
 		let ubo = UniformBufferObject { view, proj };
 

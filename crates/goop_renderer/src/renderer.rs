@@ -261,24 +261,34 @@ impl Renderer
 		).unwrap();
 	}
 
-	pub fn move_camera_right(&mut self)
+	pub fn move_camera_right(&mut self, dt: f32)
 	{
-		self.camera_eye += glm::normalize(&glm::cross(&self.camera_forward, &self.camera_up));
+		self.camera_eye += glm::normalize(&glm::cross(&self.camera_forward, &self.camera_up)) * dt;
 	}
 
-	pub fn move_camera_left(&mut self)
+	pub fn move_camera_left(&mut self, dt: f32)
 	{
-		self.camera_eye -= glm::normalize(&glm::cross(&self.camera_forward, &self.camera_up));
+		self.camera_eye -= glm::normalize(&glm::cross(&self.camera_forward, &self.camera_up)) * dt;
 	}
 
-	pub fn move_camera_backward(&mut self)
+	pub fn move_camera_backward(&mut self, dt: f32)
 	{
-		self.camera_eye -= self.camera_forward;
+		self.camera_eye -= self.camera_forward * dt;
 	}
 
-	pub fn move_camera_forward(&mut self)
+	pub fn move_camera_forward(&mut self, dt: f32)
 	{
-		self.camera_eye += self.camera_forward;
+		self.camera_eye += self.camera_forward * dt;
+	}
+
+	pub fn move_camera_up(&mut self, dt: f32)
+	{
+		self.camera_eye += self.camera_up * dt;
+	}
+
+	pub fn move_camera_down(&mut self, dt: f32)
+	{
+		self.camera_eye -= self.camera_up * dt;
 	}
 
 	pub fn update_camera_rotation(&mut self, rotation: glm::Vec3)

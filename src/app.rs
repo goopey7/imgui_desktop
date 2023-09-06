@@ -19,6 +19,7 @@ pub struct App
 	window: Window,
 	imgui: Context,
 	platform: WinitPlatform,
+	held_keys: Vec<VirtualKeyCode>,
 }
 
 impl App
@@ -44,6 +45,7 @@ impl App
 			window,
 			imgui,
 			platform,
+			held_keys: Vec::new(),
 		})
 	}
 
@@ -60,6 +62,34 @@ impl App
 		{
 			*control_flow = ControlFlow::Poll;
 			self.platform.handle_event(self.imgui.io_mut(), &self.window, &event);
+			let dt = Instant::now().duration_since(last_frame).as_secs_f32();
+			for key in self.held_keys.iter()
+			{
+				if key == &VirtualKeyCode::W
+				{
+					self.renderer.move_camera_forward(dt);
+				}
+				if key == &VirtualKeyCode::S
+				{
+					self.renderer.move_camera_backward(dt);
+				}
+				if key == &VirtualKeyCode::A
+				{
+					self.renderer.move_camera_left(dt);
+				}
+				if key == &VirtualKeyCode::D
+				{
+					self.renderer.move_camera_right(dt);
+				}
+				if key == &VirtualKeyCode::E
+				{
+					self.renderer.move_camera_up(dt);
+				}
+				if key == &VirtualKeyCode::Q
+				{
+					self.renderer.move_camera_down(dt);
+				}
+			}
 			match event
 			{
 				// New Frame
@@ -93,7 +123,7 @@ impl App
 				{
 					let (dx, dy) = delta;
 					let (dx, dy) = ((dx / 20.0) as f32, (dy / 20.0) as f32);
-					self.renderer.update_camera_rotation(glm::vec3(dy, dx, 0.0))
+					self.renderer.update_camera_rotation(glm::vec3(-dy, dx, 0.0))
 				},
 				Event::DeviceEvent {event: DeviceEvent::Key (input), .. } =>
 				{
@@ -101,6 +131,7 @@ impl App
 					{
 						if input.state == winit::event::ElementState::Pressed
 						{
+							self.held_keys.push(key);
 							if key == VirtualKeyCode::R
 							{
 								self.renderer.toggle_wireframe(&self.window);
@@ -109,22 +140,10 @@ impl App
 							{
 								self.window.set_cursor_visible(!self.renderer.cursor_visible());
 							}
-							if key == VirtualKeyCode::W
-							{
-								self.renderer.move_camera_forward();
-							}
-							if key == VirtualKeyCode::S
-							{
-								self.renderer.move_camera_backward();
-							}
-							if key == VirtualKeyCode::A
-							{
-								self.renderer.move_camera_left();
-							}
-							if key == VirtualKeyCode::D
-							{
-								self.renderer.move_camera_right();
-							}
+						}
+						else if input.state == winit::event::ElementState::Released
+						{
+							self.held_keys.retain(|&x| x != key);
 						}
 					}
 				},
