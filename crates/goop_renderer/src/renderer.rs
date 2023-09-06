@@ -295,6 +295,7 @@ impl Renderer
 	pub fn update_camera_rotation(&mut self, rotation: glm::Vec3)
 	{
 		self.camera_rotation += rotation;
+		self.camera_rotation.x = self.camera_rotation.x.max(-89.0).min(89.0);
 
 		let (cos_p, cos_y, cos_r) = (self.camera_rotation.x.to_radians().cos(), self.camera_rotation.y.to_radians().cos(), self.camera_rotation.z.to_radians().cos());
 		let (sin_p, sin_y, sin_r) = (self.camera_rotation.x.to_radians().sin(), self.camera_rotation.y.to_radians().sin(), self.camera_rotation.z.to_radians().sin());
