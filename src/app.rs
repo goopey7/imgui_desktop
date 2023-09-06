@@ -60,6 +60,8 @@ impl App
 
 		self.event_loop.run(move |event,_,control_flow|
 		{
+			self.window.set_cursor_visible(false);
+			self.window.set_cursor_grab(winit::window::CursorGrabMode::Confined).unwrap();
 			*control_flow = ControlFlow::Poll;
 			self.platform.handle_event(self.imgui.io_mut(), &self.window, &event);
 			let dt = Instant::now().duration_since(last_frame).as_secs_f32();

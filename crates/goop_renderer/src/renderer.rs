@@ -137,8 +137,9 @@ impl Renderer
 
 		// LOAD INSTANCES
 		vh::prep_instances(&mut data)?;
-		let earth = vh::InstanceData::new(glm::Mat4::identity(), earth_tex);
-		let moon = vh::InstanceData::new(glm::Mat4::identity(), moon_tex);
+
+		//let earth = vh::InstanceData::new(glm::Mat4::identity(), earth_tex);
+		//let moon = vh::InstanceData::new(glm::Mat4::identity(), moon_tex);
 		//vh::load_instances(&mut data, planet_model, vec![moon])?;
 
 		let rotation = glm::Mat4::identity();
