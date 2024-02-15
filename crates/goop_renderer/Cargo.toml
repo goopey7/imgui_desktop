@@ -12,7 +12,7 @@ anyhow = "1.0.72"
 ash = "0.37.3"
 ash-window = "0.12.0"
 imgui = {version = "0.11.0", features = ["docking"]}
-imgui-rs-vulkan-renderer = {version = "1.9.0"}
+imgui-rs-vulkan-renderer = {path = "../imgui-rs-vulkan-renderer"}
 imgui-winit-support = {version = "0.11.0"}
 log = "0.4.19"
 nalgebra-glm = "0.18.0"

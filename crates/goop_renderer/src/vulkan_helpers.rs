@@ -362,7 +362,7 @@ pub mod vh
 			.cloned()
 			.find(|f|
 				{
-					f.format == vk::Format::B8G8R8A8_SRGB
+					f.format == vk::Format::R8G8B8A8_UNORM
 								&& f.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
 				})
 			.unwrap_or_else(|| formats[0])
@@ -1318,7 +1318,7 @@ pub mod vh
 				height,
 				*mip_levels,
 				vk::SampleCountFlags::TYPE_1,
-				vk::Format::R8G8B8A8_SRGB,
+				vk::Format::R8G8B8A8_UNORM,
 				vk::ImageTiling::OPTIMAL,
 				vk::ImageUsageFlags::SAMPLED
 					| vk::ImageUsageFlags::TRANSFER_SRC
@@ -1351,7 +1351,7 @@ pub mod vh
 				device,
 				data,
 				texture_image,
-				vk::Format::R8G8B8A8_SRGB,
+				vk::Format::R8G8B8A8_UNORM,
 				width,
 				height,
 				*mip_levels,
@@ -1395,7 +1395,7 @@ pub mod vh
 		Ok(unsafe { create_image_view(
 			device,
 			texture_image,
-			vk::Format::R8G8B8A8_SRGB,
+			vk::Format::R8G8B8A8_UNORM,
 			vk::ImageAspectFlags::COLOR,
 			mip_levels,
 		)?})
