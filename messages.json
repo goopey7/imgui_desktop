@@ -1,0 +1,55 @@
+[
+	{
+		"name": "King",
+		"messages": [
+			{
+				"content": "Yo what's taking thou so long?",
+				"time_to_respond": 20,
+				"responses": [
+					{
+						"content": "Why don't you mind your own business",
+						"health": 5
+					},
+					{
+						"content": "Apologies my liege",
+						"health": 30
+					}
+				]
+			}
+		]
+	},
+	{
+		"name": "Damsel",
+		"messages": [
+			{
+				"content": "Can you act with a bit more haste?",
+				"time_to_respond": 20,
+				"responses": [
+					{
+						"content": "Can you not get kidnapped?",
+						"health": 5
+					},
+					{
+						"content": "Of course mam",
+						"health": 30
+					}
+				]
+			}
+		]
+	},
+	{
+		"name": "The Knight's Vault",
+		"messages": [
+			{
+				"content": "The SquishyKiller4000 is back in stock!",
+				"time_to_respond": 20,
+				"responses": [
+					{
+						"content": "dismiss",
+						"health": 0
+					}
+				]
+			}
+		]
+	}
+]
