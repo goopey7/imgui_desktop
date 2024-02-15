@@ -126,6 +126,8 @@ impl Renderer
 		}
 		);
 
+		ui.dockspace_over_main_viewport();
+
 		ui.window("Camera Info")
 			.size([200.0, 100.0], Condition::FirstUseEver)
 			.build(|| {
