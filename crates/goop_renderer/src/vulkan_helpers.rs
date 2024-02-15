@@ -1544,6 +1544,11 @@ pub mod vh
 
 	pub fn create_instance_buffer(instance: &ash::Instance, device: &ash::Device, data: &mut Data) -> Result<()>
 	{
+		if data.instances.is_empty()
+		{
+			return Ok(());
+		}
+
 		let size = (size_of::<InstanceData>() * data.instances.len()) as u64;
 
 		unsafe {
@@ -1723,11 +1728,7 @@ pub mod vh
 			.ty(vk::DescriptorType::UNIFORM_BUFFER)
 			.descriptor_count(data.swapchain_images.len() as u32);
 
-		let sampler_size = vk::DescriptorPoolSize::builder()
-			.ty(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-			.descriptor_count(data.textures.len() as u32 * data.swapchain_images.len() as u32);
-
-		let pool_sizes = &[*ubo_size, *sampler_size];
+		let pool_sizes = &[*ubo_size];
 		let info = vk::DescriptorPoolCreateInfo::builder()
 			.pool_sizes(pool_sizes)
 			.max_sets(data.swapchain_images.len() as u32);
@@ -1764,24 +1765,8 @@ pub mod vh
 				.buffer_info(buffer_info)
 				.build();
 
-			let image_infos = data.textures.iter().map(|t| {
-				vk::DescriptorImageInfo::builder()
-				.image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-				.image_view(t.image_view)
-				.sampler(t.sampler)
-				.build()
-			}).collect::<Vec<_>>();
-
-			let sampler_write = vk::WriteDescriptorSet::builder()
-				.dst_set(data.descriptor_sets[i])
-				.dst_binding(1)
-				.dst_array_element(0)
-				.descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-				.image_info(&image_infos)
-				.build();
-
 			unsafe { device.update_descriptor_sets(
-				&[ubo_write, sampler_write],
+				&[ubo_write],
 				&[] as &[vk::CopyDescriptorSet]
 			) };
 		}
@@ -1796,13 +1781,7 @@ pub mod vh
 			.descriptor_count(1)
 			.stage_flags(vk::ShaderStageFlags::VERTEX);
 
-		let sampler_binding = vk::DescriptorSetLayoutBinding::builder()
-			.binding(1)
-			.descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-			.descriptor_count(data.textures.len() as u32)
-			.stage_flags(vk::ShaderStageFlags::FRAGMENT);
-
-		let bindings = &[*ubo_binding, *sampler_binding];
+		let bindings = &[*ubo_binding];
 		let info = vk::DescriptorSetLayoutCreateInfo::builder()
 			.bindings(bindings);
 
@@ -2144,9 +2123,7 @@ pub mod vh
 		image_index: usize,
 		data: &mut Data,
 		start: &std::time::Instant,
-		#[cfg(feature = "goop_imgui")]
 		renderer: &mut imgui_rs_vulkan_renderer::Renderer,
-		#[cfg(feature = "goop_imgui")]
 		draw_data: &imgui::DrawData,
 		) -> Result<()>
 	{
@@ -2204,8 +2181,12 @@ pub mod vh
 			device.cmd_begin_render_pass(cb, &info, vk::SubpassContents::INLINE);
 			device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, data.pipeline);
 					
-			device.cmd_bind_vertex_buffers(cb, 0, &[data.vertex_buffer], &[0]);
-			device.cmd_bind_index_buffer(cb, data.index_buffer, 0, vk::IndexType::UINT32);
+			if !data.vertices.is_empty() && !data.vertices.is_empty()
+			{
+				device.cmd_bind_vertex_buffers(cb, 0, &[data.vertex_buffer], &[0]);
+				device.cmd_bind_index_buffer(cb, data.index_buffer, 0, vk::IndexType::UINT32);
+			}
+
 			device.cmd_bind_descriptor_sets(
 				cb,
 				vk::PipelineBindPoint::GRAPHICS,
@@ -2229,29 +2210,30 @@ pub mod vh
 				&opacity.to_ne_bytes()[..],
 			);
 
-			device.cmd_bind_vertex_buffers(cb, 1, &[data.instance_buffer], &[0]);
-
-			for i in 0..data.model_count
+			if !data.instances.is_empty()
 			{
-				let i = i as usize;
-				if data.instance_offsets[i].is_none()
+				device.cmd_bind_vertex_buffers(cb, 1, &[data.instance_buffer], &[0]);
+
+				for i in 0..data.model_count
 				{
-					continue;
+					let i = i as usize;
+					if data.instance_offsets[i].is_none()
+					{
+						continue;
+					}
+					let instance_offset = data.instance_offsets[i].unwrap() as u32;
+					device.cmd_draw_indexed(
+						cb,
+						data.index_offsets[i + 1] - data.index_offsets[i],
+						data.instance_count[i],
+						data.index_offsets[i],
+						0,
+						instance_offset,
+					);
 				}
-				let instance_offset = data.instance_offsets[i].unwrap() as u32;
-				device.cmd_draw_indexed(
-					cb,
-					data.index_offsets[i + 1] - data.index_offsets[i],
-					data.instance_count[i],
-					data.index_offsets[i],
-					0,
-					instance_offset,
-				);
 			}
 
-			#[cfg(feature = "goop_imgui")]
 			renderer.cmd_draw(cb, draw_data)?;
-
 			device.cmd_end_render_pass(cb);
 			device.end_command_buffer(cb)?;
 		}
@@ -2275,9 +2257,7 @@ pub mod vh
 		window: &Window,
 		data: &mut Data,
 		start: &std::time::Instant,
-		#[cfg(feature = "goop_imgui")]
 		renderer: &mut imgui_rs_vulkan_renderer::Renderer,
-		#[cfg(feature = "goop_imgui")]
 		draw_data: &imgui::DrawData,
 		camera_eye: glm::Vec3,
 		camera_forward: glm::Vec3,
@@ -2316,9 +2296,7 @@ pub mod vh
 			image_index,
 			data,
 			start,
-			#[cfg(feature = "goop_imgui")]
 			renderer,
-			#[cfg(feature = "goop_imgui")]
 			&draw_data,
 		)?;
 		update_uniform_buffer(device, image_index, data, camera_eye, camera_forward, camera_up)?;
@@ -2434,10 +2412,6 @@ pub mod vh
 		data.graphics_command_pools
 			.iter()
 			.for_each(|cp| device.destroy_command_pool(*cp, None));
-		device.destroy_sampler(data.textures[0].sampler, None);
-		device.destroy_image_view(data.textures[0].image_view, None);
-		device.destroy_image(data.textures[0].image, None);
-		device.free_memory(data.textures[0].image_memory, None);
 		device.destroy_descriptor_set_layout(data.descriptor_set_layout, None);
 		device.destroy_buffer(data.index_buffer, None);
 		device.free_memory(data.index_buffer_memory, None);
@@ -2457,17 +2431,5 @@ pub mod vh
 			.for_each(|s| device.destroy_semaphore(*s, None));
 		device.destroy_command_pool(data.graphics_command_pool, None);
 		device.destroy_command_pool(data.transfer_command_pool, None);
-
-		#[cfg(not(feature = "goop_imgui"))]
-		device.destroy_device(None);
-		#[cfg(not(feature = "goop_imgui"))]
-		surface_loader.destroy_surface(data.surface, None);
-		#[cfg(not(feature = "goop_imgui"))]
-		if let (Some(du), Some(msg)) = (data.debug_utils.as_ref(), data.messenger.as_ref())
-		{
-			du.destroy_debug_utils_messenger(*msg, None);
-		}
-		#[cfg(not(feature = "goop_imgui"))]
-		instance.destroy_instance(None);
 	}
 }

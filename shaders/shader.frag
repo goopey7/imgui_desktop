@@ -5,8 +5,6 @@ layout(location=0) in vec3 fragColor;
 layout(location=1) in vec2 fragTexCoord;
 layout(location=2) in flat uint fragTexId;
 
-layout(binding=1) uniform sampler2D texSamplers[1];
-
 layout(push_constant) uniform PushConstants
 {
 	layout(offset=64) float opacity;
@@ -19,6 +17,8 @@ layout(location=0) out vec4 outColor;
 void main()
 {
 	//outColor = vec4(texture(texSamplers[fragTexId], fragTexCoord).rgb, pcs.opacity);
-	outColor = vec4(texture(texSamplers[fragTexId], fragTexCoord).rgb, 1.0f);
+	//outColor = vec4(texture(texSamplers[fragTexId], fragTexCoord).rgb, 1.0f);
+
+	outColor = vec4(1.f, 0.f, 0.f, pcs.opacity);
 }
 

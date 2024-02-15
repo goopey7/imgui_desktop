@@ -3,18 +3,13 @@ name = "goop"
 version = "0.1.0"
 edition = "2021"
 
-[lib]
-name = "goop"
-crate-type = ["rlib"]
-
 [dependencies]
 anyhow = "1.0.72"
 log = "0.4.19"
 pretty_env_logger = "0.5.0"
 raw-window-handle = "0.5.2"
 winit = "0.27"
-
-goop_renderer = { path = "crates/goop_renderer", features = ["goop_imgui"]}
+goop_renderer = { path = "crates/goop_renderer" }
 imgui = "0.11.0"
 imgui-winit-support = "0.11.0"
 nalgebra-glm = "0.18.0"
