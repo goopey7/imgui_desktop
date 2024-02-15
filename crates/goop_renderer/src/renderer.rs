@@ -1,8 +1,6 @@
 use anyhow::Result;
-use std::time::Instant;
 use winit::window::Window;
 use crate::vulkan_helpers::vh::{Data, self};
-use nalgebra_glm as glm;
 
 use imgui::*;
 use imgui_winit_support::WinitPlatform;
@@ -17,12 +15,7 @@ pub struct Renderer
 	device: ash::Device,
 	surface: ash::extensions::khr::Surface,
 	data: Data,
-	camera_eye: glm::Vec3,
-	camera_forward: glm::Vec3,
-	camera_up: glm::Vec3,
-	camera_rotation: glm::Vec3,
 	pub cursor_visible: bool,
-
     pub imgui_renderer: imgui_rs_vulkan_renderer::Renderer,
 }
 
@@ -60,10 +53,6 @@ impl Renderer
 			surface,
 			data,
 			imgui_renderer,
-			camera_eye: glm::vec3(0.0, 0.0, 8.0),
-			camera_forward: glm::vec3(0.0, 0.0, -1.0),
-			camera_up: glm::vec3(0.0, 1.0, 0.0),
-			camera_rotation: glm::vec3(0.0, 0.0, 0.0),
 			cursor_visible: true,
 		})
 	}
@@ -82,20 +71,15 @@ impl Renderer
 		let instance = vh::create_instance(&entry, window, VALIDATION_ENABLED, &mut data, app_name)?;
 		let surface = vh::create_surface(&entry, &instance, window, &mut data)?;
 		let device = vh::create_logical_device(&instance, &surface, &mut data)?;
-		vh::set_msaa_samples(&instance, &mut data)?;
+		vh::set_msaa_samples(&mut data)?;
 		vh::create_swapchain(&instance, &device, &surface, window, &mut data)?;
 		vh::create_swapchain_image_views(&device, &mut data)?;
 		vh::create_render_pass(&instance, &device, &mut data)?;
 		vh::create_command_pools(&instance, &device, &surface, &mut data)?;
 
-		vh::create_descriptor_set_layout(&device, &mut data)?;
-		vh::create_pipeline(&device, &mut data)?;
 		vh::create_color_objects(&instance, &device, &mut data)?;
 		vh::create_depth_objects(&instance, &device, &mut data)?;
 		vh::create_framebuffers(&device, &mut data)?;
-		vh::create_uniform_buffers(&instance, &device, &mut data)?;
-		vh::create_descriptor_pool(&device, &mut data)?;
-		vh::create_descriptor_sets(&device, &mut data)?;
 		vh::create_command_buffers(&device, &mut data)?;
 		vh::create_sync_objects(&device, &mut data)?;
 
@@ -103,7 +87,7 @@ impl Renderer
 		Ok((entry, instance, surface, device, data))
 	}
 
-	pub fn render(&mut self, window: &Window, start: Instant, imgui: &mut Context, platform: &mut WinitPlatform)
+	pub fn render(&mut self, window: &Window, imgui: &mut Context, platform: &mut WinitPlatform)
 	{
 		platform
 			.prepare_frame(imgui.io_mut(), &window)
@@ -133,27 +117,15 @@ impl Renderer
 			.build(|| {
 				ui.spacing();
 				ui.text("Rotation");
-				ui.text(format!("Pitch: {:.1}", self.camera_rotation.x));
-				ui.text(format!("Yaw: {:.1}", self.camera_rotation.y));
-				ui.text(format!("Roll: {:.1}", self.camera_rotation.z));
 
 				ui.spacing();
 				ui.text("Position");
-				ui.text(format!("X: {:.1}", self.camera_eye.x));
-				ui.text(format!("Y: {:.1}", self.camera_eye.y));
-				ui.text(format!("Z: {:.1}", self.camera_eye.z));
 
 				ui.spacing();
 				ui.text("Forward");
-				ui.text(format!("X: {:.1}", self.camera_forward.x));
-				ui.text(format!("Y: {:.1}", self.camera_forward.y));
-				ui.text(format!("Z: {:.1}", self.camera_forward.z));
 
 				ui.spacing();
 				ui.text("Up");
-				ui.text(format!("X: {:.1}", self.camera_up.x));
-				ui.text(format!("Y: {:.1}", self.camera_up.y));
-				ui.text(format!("Z: {:.1}", self.camera_up.z));
 			});
 
 		platform.prepare_render(&ui, &window);
@@ -165,12 +137,8 @@ impl Renderer
 			&self.surface,
 			&window,
 			&mut self.data,
-			&start,
 			&mut self.imgui_renderer,
 			&draw_data,
-			self.camera_eye,
-			self.camera_forward,
-			self.camera_up,
 		).unwrap();
 	}
 
@@ -189,55 +157,6 @@ impl Renderer
 			&mut self.data,
 		).unwrap();
 	}
-
-	pub fn move_camera_right(&mut self, dt: f32)
-	{
-		self.camera_eye += glm::normalize(&glm::cross(&self.camera_forward, &self.camera_up)) * dt;
-	}
-
-	pub fn move_camera_left(&mut self, dt: f32)
-	{
-		self.camera_eye -= glm::normalize(&glm::cross(&self.camera_forward, &self.camera_up)) * dt;
-	}
-
-	pub fn move_camera_backward(&mut self, dt: f32)
-	{
-		self.camera_eye -= self.camera_forward * dt;
-	}
-
-	pub fn move_camera_forward(&mut self, dt: f32)
-	{
-		self.camera_eye += self.camera_forward * dt;
-	}
-
-	pub fn move_camera_up(&mut self, dt: f32)
-	{
-		self.camera_eye += self.camera_up * dt;
-	}
-
-	pub fn move_camera_down(&mut self, dt: f32)
-	{
-		self.camera_eye -= self.camera_up * dt;
-	}
-
-	pub fn update_camera_rotation(&mut self, rotation: glm::Vec3)
-	{
-		self.camera_rotation += rotation;
-		self.camera_rotation.x = self.camera_rotation.x.max(-89.0).min(89.0);
-
-		let (cos_p, cos_y, cos_r) = (self.camera_rotation.x.to_radians().cos(), self.camera_rotation.y.to_radians().cos(), self.camera_rotation.z.to_radians().cos());
-		let (sin_p, sin_y, sin_r) = (self.camera_rotation.x.to_radians().sin(), self.camera_rotation.y.to_radians().sin(), self.camera_rotation.z.to_radians().sin());
-
-		self.camera_forward = glm::vec3(sin_y * cos_p, sin_p, cos_p * -cos_y);
-		self.camera_forward = self.camera_forward.normalize();
-
-		self.camera_up = glm::vec3(
-			-cos_y * sin_r - sin_y * sin_p * cos_r,
-			cos_p * cos_r,
-			-sin_y * sin_r - sin_p * cos_r * -cos_y,
-		);
-	}
-
 }
 
 impl Drop for Renderer
@@ -247,7 +166,7 @@ impl Drop for Renderer
 		log::info!("Destroying Renderer");
 		unsafe
 		{
-			return vh::destroy(&self.instance, &self.device, &self.surface, &self.data);
+			return vh::destroy(&self.device, &self.data);
 		}
 	}
 }

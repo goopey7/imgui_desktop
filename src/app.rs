@@ -6,10 +6,9 @@ use winit::
 	event_loop::{EventLoop, ControlFlow},
 	window::{Window, WindowBuilder},
 	dpi::LogicalSize,
-	event::{Event, WindowEvent, VirtualKeyCode, DeviceEvent}
+	event::{Event, WindowEvent}
 };
 use anyhow::Result;
-use nalgebra_glm as glm;
 
 use goop_renderer::renderer::Renderer;
 pub struct App
@@ -19,7 +18,6 @@ pub struct App
 	window: Window,
 	imgui: Context,
 	platform: WinitPlatform,
-	held_keys: Vec<VirtualKeyCode>,
 }
 
 impl App
@@ -45,14 +43,11 @@ impl App
 			window,
 			imgui,
 			platform,
-			held_keys: Vec::new(),
 		})
 	}
 
 	pub fn run(mut self)
 	{
-		let start = Instant::now();
-
 		let mut destroying = false;
 		let mut minimized = false;
 
@@ -61,37 +56,8 @@ impl App
 		self.event_loop.run(move |event,_,control_flow|
 		{
 			self.window.set_cursor_visible(self.renderer.cursor_visible());
-			self.window.set_cursor_grab(winit::window::CursorGrabMode::Confined).unwrap();
 			*control_flow = ControlFlow::Poll;
 			self.platform.handle_event(self.imgui.io_mut(), &self.window, &event);
-			let dt = Instant::now().duration_since(last_frame).as_secs_f32();
-			for key in self.held_keys.iter()
-			{
-				if key == &VirtualKeyCode::W
-				{
-					self.renderer.move_camera_forward(dt);
-				}
-				if key == &VirtualKeyCode::S
-				{
-					self.renderer.move_camera_backward(dt);
-				}
-				if key == &VirtualKeyCode::A
-				{
-					self.renderer.move_camera_left(dt);
-				}
-				if key == &VirtualKeyCode::D
-				{
-					self.renderer.move_camera_right(dt);
-				}
-				if key == &VirtualKeyCode::E
-				{
-					self.renderer.move_camera_up(dt);
-				}
-				if key == &VirtualKeyCode::Q
-				{
-					self.renderer.move_camera_down(dt);
-				}
-			}
 			match event
 			{
 				// New Frame
@@ -105,7 +71,7 @@ impl App
 				// Render a frame if our Vulkan app is not being destroyed.
 				Event::MainEventsCleared if !destroying && !minimized =>
 				{
-					self.renderer.render(&self.window, start, &mut self.imgui, &mut self.platform);
+					self.renderer.render(&self.window, &mut self.imgui, &mut self.platform);
 				},
 				// Check for resize
 				Event::WindowEvent {event: WindowEvent::Resized(size), ..} =>
@@ -118,35 +84,6 @@ impl App
 					{
 						minimized = false;
 						self.renderer.resize();
-					}
-				},
-				// Mouse Input
-				Event::DeviceEvent {event: DeviceEvent::MouseMotion { delta }, .. } =>
-				{
-					let (dx, dy) = delta;
-					let (dx, dy) = ((dx / 20.0) as f32, (dy / 20.0) as f32);
-					self.renderer.update_camera_rotation(glm::vec3(-dy, dx, 0.0))
-				},
-				Event::DeviceEvent {event: DeviceEvent::Key (input), .. } =>
-				{
-					if let Some(key) = input.virtual_keycode
-					{
-						if input.state == winit::event::ElementState::Pressed
-						{
-							self.held_keys.push(key);
-							if key == VirtualKeyCode::R
-							{
-								self.renderer.toggle_wireframe(&self.window);
-							}
-							if key == VirtualKeyCode::Tab
-							{
-								self.renderer.cursor_visible = !self.renderer.cursor_visible;
-							}
-						}
-						else if input.state == winit::event::ElementState::Released
-						{
-							self.held_keys.retain(|&x| x != key);
-						}
 					}
 				},
 				// Destroy App (renderer gets dropped automatically)
