@@ -500,21 +500,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "goop"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "goop_renderer",
- "imgui",
- "imgui-winit-support",
- "log",
- "nalgebra-glm",
- "pretty_env_logger",
- "raw-window-handle 0.5.2",
- "winit",
-]
-
-[[package]]
 name = "goop_renderer"
 version = "0.1.0"
 dependencies = [
@@ -573,6 +558,8 @@ dependencies = [
 [[package]]
 name = "imgui-rs-vulkan-renderer"
 version = "1.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d660c31fa86a84eb170f98d44f78ccb13d47213130b1bade922cbcaf180c8efd"
 dependencies = [
  "ash",
  "imgui",
@@ -600,6 +587,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "edae4bfce64634fa013aec131f5d5f1c80df8aa0bddc0e0a9845ad57036b6987"
 dependencies = [
  "imgui",
+ "winit",
+]
+
+[[package]]
+name = "imgui_desktop"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "goop_renderer",
+ "imgui",
+ "imgui-winit-support",
+ "log",
+ "nalgebra-glm",
+ "pretty_env_logger",
+ "raw-window-handle 0.5.2",
  "winit",
 ]
 

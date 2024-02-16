@@ -1,7 +1,11 @@
 [package]
-name = "goop"
+name = "imgui_desktop"
 version = "0.1.0"
 edition = "2021"
+
+[lib]
+name = "imgui_desktop"
+crate-type = ["rlib"]
 
 [dependencies]
 anyhow = "1.0.72"

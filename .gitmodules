@@ -1,3 +1,0 @@
-[submodule "crates/imgui-rs-vulkan-renderer"]
-	path = crates/imgui-rs-vulkan-renderer
-	url = git@github.com:adrien-ben/imgui-rs-vulkan-renderer.git

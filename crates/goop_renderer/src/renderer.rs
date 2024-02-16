@@ -87,46 +87,14 @@ impl Renderer
 		Ok((entry, instance, surface, device, data))
 	}
 
-	pub fn render(&mut self, window: &Window, imgui: &mut Context, platform: &mut WinitPlatform)
+	pub fn render(&mut self, window: &Window, imgui: &mut Context, platform: &mut WinitPlatform, ui_fn: &dyn Fn(&mut Ui))
 	{
 		platform
 			.prepare_frame(imgui.io_mut(), &window)
 			.expect("Failed to prepare frame");
 
 		let ui = imgui.frame();
-
-		ui.main_menu_bar(||
-		{
-			ui.menu("View", || {
-				if ui.menu_item_config("Wireframe")
-					.selected(self.data.wireframe)
-					.build()
-				{
-					self.toggle_wireframe(&window);
-				}
-			});
-			ui.spacing();
-			ui.text(format!("FPS: {:.1}", 1.0 / ui.io().delta_time));
-		}
-		);
-
-		ui.dockspace_over_main_viewport();
-
-		ui.window("Camera Info")
-			.size([200.0, 100.0], Condition::FirstUseEver)
-			.build(|| {
-				ui.spacing();
-				ui.text("Rotation");
-
-				ui.spacing();
-				ui.text("Position");
-
-				ui.spacing();
-				ui.text("Forward");
-
-				ui.spacing();
-				ui.text("Up");
-			});
+		ui_fn(ui);
 
 		platform.prepare_render(&ui, &window);
 		let draw_data = imgui.render();

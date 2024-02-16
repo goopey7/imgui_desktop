@@ -46,7 +46,7 @@ impl App
 		})
 	}
 
-	pub fn run(mut self)
+	pub fn run(mut self, ui_fn: Box<dyn Fn(&mut imgui::Ui)>)
 	{
 		let mut destroying = false;
 		let mut minimized = false;
@@ -71,7 +71,7 @@ impl App
 				// Render a frame if our Vulkan app is not being destroyed.
 				Event::MainEventsCleared if !destroying && !minimized =>
 				{
-					self.renderer.render(&self.window, &mut self.imgui, &mut self.platform);
+					self.renderer.render(&self.window, &mut self.imgui, &mut self.platform, &*ui_fn);
 				},
 				// Check for resize
 				Event::WindowEvent {event: WindowEvent::Resized(size), ..} =>
