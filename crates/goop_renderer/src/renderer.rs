@@ -21,7 +21,7 @@ pub struct Renderer
 
 impl Renderer
 {
-	pub fn init(window: &Window, app_name: &str, imgui: &mut Context) -> Result<Self>
+	pub fn init(window: &Window, app_name: &str, imgui: &mut Context, mut ui_setup: Box<dyn FnMut(&mut Context)>) -> Result<Self>
 	{
 		let (entry, instance, surface, device, data) = Renderer::init_renderer(window, app_name)?;
 
@@ -45,6 +45,7 @@ impl Renderer
 			),
 		)?;
 
+		ui_setup(imgui);
 		Ok(Renderer
 		{
 			_entry: entry,
@@ -87,13 +88,15 @@ impl Renderer
 		Ok((entry, instance, surface, device, data))
 	}
 
-	pub fn render(&mut self, window: &Window, imgui: &mut Context, platform: &mut WinitPlatform, ui_fn: &dyn Fn(&mut Context) -> &mut Ui)
+	pub fn render(&mut self, window: &Window, imgui: &mut Context, platform: &mut WinitPlatform, ui_fn: &dyn Fn(&mut Ui))
 	{
 		platform
 			.prepare_frame(imgui.io_mut(), &window)
 			.expect("Failed to prepare frame");
 
-		let ui = ui_fn(imgui);
+		let ui = imgui.frame();
+
+		ui_fn(ui);
 
 		platform.prepare_render(&ui, &window);
 		let draw_data = imgui.render();

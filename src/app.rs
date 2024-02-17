@@ -22,7 +22,7 @@ pub struct App
 
 impl App
 {
-	pub fn new(app_name: &str) -> Result<Self>
+	pub fn new(app_name: &str, ui_setup: Box<dyn FnMut(&mut imgui::Context)>) -> Result<Self>
 	{
 		let event_loop = EventLoop::new();
 		let window = WindowBuilder::new()
@@ -34,7 +34,7 @@ impl App
 		let mut platform = WinitPlatform::init(&mut imgui);
 		platform.attach_window(imgui.io_mut(), &window, imgui_winit_support::HiDpiMode::Rounded);
 
-		let renderer = Renderer::init(&window, app_name, &mut imgui)?;
+		let renderer = Renderer::init(&window, app_name, &mut imgui, ui_setup)?;
 
 		Ok(Self
 		{
@@ -46,7 +46,7 @@ impl App
 		})
 	}
 
-	pub fn run(mut self, ui_fn: Box<dyn Fn(&mut imgui::Context) -> &mut imgui::Ui>)
+	pub fn run(mut self, ui_fn: Box<dyn Fn(&mut imgui::Ui)>)
 	{
 		let mut destroying = false;
 		let mut minimized = false;
