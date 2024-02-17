@@ -87,14 +87,13 @@ impl Renderer
 		Ok((entry, instance, surface, device, data))
 	}
 
-	pub fn render(&mut self, window: &Window, imgui: &mut Context, platform: &mut WinitPlatform, ui_fn: &dyn Fn(&mut Ui))
+	pub fn render(&mut self, window: &Window, imgui: &mut Context, platform: &mut WinitPlatform, ui_fn: &dyn Fn(&mut Context) -> &mut Ui)
 	{
 		platform
 			.prepare_frame(imgui.io_mut(), &window)
 			.expect("Failed to prepare frame");
 
-		let ui = imgui.frame();
-		ui_fn(ui);
+		let ui = ui_fn(imgui);
 
 		platform.prepare_render(&ui, &window);
 		let draw_data = imgui.render();

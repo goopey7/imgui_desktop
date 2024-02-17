@@ -46,7 +46,7 @@ impl App
 		})
 	}
 
-	pub fn run(mut self, ui_fn: Box<dyn Fn(&mut imgui::Ui)>)
+	pub fn run(mut self, ui_fn: Box<dyn Fn(&mut imgui::Context) -> &mut imgui::Ui>)
 	{
 		let mut destroying = false;
 		let mut minimized = false;

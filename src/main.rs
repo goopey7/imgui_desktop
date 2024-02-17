@@ -2,19 +2,24 @@ use imgui::Condition;
 use imgui_desktop::app::App;
 use anyhow::Result;
 
-fn ui_fn(ui: &mut imgui::Ui)
+fn ui_fn(ctx: &mut imgui::Context) -> &mut imgui::Ui
 {
-	ui.main_menu_bar(||
-	{
-		ui.text(format!("FPS: {:.1}", 1.0 / ui.io().delta_time));
-	}
-	);
+	// disable imgui.ini
+	ctx.set_ini_filename(None);
 
-	ui.dockspace_over_main_viewport();
+	let display_size = ctx.io().display_size;
+	let ui = ctx.frame();
 
-	ui.window("Ahhh fn nice!")
-		.size([200.0, 100.0], Condition::FirstUseEver)
+	ui.window("FAhhh fn nice!!")
+		.size(display_size, Condition::Always)
+		.position([0f32, 0f32], Condition::Always)
+		.collapsible(false)
+		.menu_bar(true)
+		.title_bar(false)
 		.build(|| {
+			ui.menu_bar(|| {
+				ui.text(format!("FPS: {:.1}", 1.0 / ui.io().delta_time));
+			});
 			ui.spacing();
 			ui.text("Rotation");
 
@@ -27,6 +32,7 @@ fn ui_fn(ui: &mut imgui::Ui)
 			ui.spacing();
 			ui.text("Up");
 		});
+	ui
 }
 
 fn main() -> Result<()>
