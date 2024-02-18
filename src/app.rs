@@ -11,6 +11,9 @@ use winit::
 use anyhow::Result;
 
 use goop_renderer::renderer::Renderer;
+
+use crate::clipboard::Clipboard;
+
 pub struct App
 {
 	renderer: Renderer,
@@ -35,6 +38,7 @@ impl App
 		platform.attach_window(imgui.io_mut(), &window, imgui_winit_support::HiDpiMode::Rounded);
 
 		let renderer = Renderer::init(&window, app_name, &mut imgui, ui_setup)?;
+		imgui.set_clipboard_backend(Clipboard::new());
 
 		Ok(Self
 		{

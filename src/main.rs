@@ -37,6 +37,8 @@ impl State
 					println!("{}", self.msg);
 					self.msg = "Ayyyyyy".to_string();
 				}
+
+				ui.input_text("input", &mut self.msg).build();
 			});
 	}
 }

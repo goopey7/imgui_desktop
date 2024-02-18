@@ -25,9 +25,6 @@ impl Renderer
 	{
 		let (entry, instance, surface, device, data) = Renderer::init_renderer(window, app_name)?;
 
-		imgui.io_mut().config_flags |= imgui::ConfigFlags::IS_SRGB;
-		imgui.io_mut().config_flags |= imgui::ConfigFlags::DOCKING_ENABLE;
-
 		let imgui_renderer = imgui_rs_vulkan_renderer::Renderer::with_default_allocator(
 			&instance,
 			data.physical_device,

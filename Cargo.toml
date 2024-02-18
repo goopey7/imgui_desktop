@@ -17,3 +17,4 @@ goop_renderer = { path = "crates/goop_renderer" }
 imgui = "0.11.0"
 imgui-winit-support = "0.11.0"
 nalgebra-glm = "0.18.0"
+clipboard = "0.5.0"
